@@ -71,7 +71,7 @@ const MAT_CATS = {
   tracteur: 'Tracteurs', moissonneuse: 'Moissonneuses-batteuses', ensileuse: 'Ensileuses', pulverisateur: 'Pulvérisateurs',
   semoir: 'Semoirs', dechaumeur: 'Déchaumeurs', charrue: 'Charrues', remorque: 'Remorques', manutention: 'Matériel de manutention', divers: 'Matériel divers',
 };
-const MAINT_TYPES = { entretien: 'Entretien', vidange: 'Vidange', filtres: 'Filtres', pneumatiques: 'Pneumatiques', reparation: 'Réparation / panne', controle: 'Contrôle réglementaire' };
+const MAINT_TYPES = { entretien: 'Entretien', vidange: 'Vidange', filtres: 'Filtres', graissage: 'Graissage', pneumatiques: 'Pneumatiques', reparation: 'Réparation / panne', controle: 'Contrôle réglementaire' };
 const ENGINE_CATS = ['tracteur', 'moissonneuse', 'ensileuse', 'manutention'];
 const isEngine = m => m.moteur != null ? !!m.moteur : ENGINE_CATS.includes(m.cat);
 const ETATS = { excellent: 1.08, bon: 1, moyen: 0.9, mauvais: 0.78 };
@@ -248,7 +248,7 @@ function deleteSale(v) {
 /** Entretien / réparation matériel : historique + charge. */
 function recordMaintenance(matId, e) {
   const m = byId('materiel', matId);
-  const entry = { id: uid('mt'), ...e, coutPieces: +e.coutPieces || 0, coutMO: +e.coutMO || 0, immobilisation: +e.immobilisation || 0 };
+  const entry = { id: uid('mt'), ...e, heures: e.heures != null && e.heures !== '' ? +e.heures : matCnt(m), coutPieces: +e.coutPieces || 0, coutMO: +e.coutMO || 0, immobilisation: +e.immobilisation || 0 };
   m.maintenance.push(entry);
   const total = entry.coutPieces + entry.coutMO;
   if (total > 0) S.charges.push({ id: uid('ch'), date: e.date, campagne: campOf(e.date), cat: e.type === 'reparation' ? 'reparations' : 'entretien', libelle: `${m.marque} ${m.modele} — ${e.titre}`, montant: r2(total), fournisseur: e.prestataire || '', materielId: m.id, ref: entry.id });
@@ -306,20 +306,69 @@ function estimationRevente(m) {
 }
 function valeurMateriel(m) { return m.valeurManuelle != null && m.valeurManuelle !== '' ? +m.valeurManuelle : estimationRevente(m).valeur; }
 
-function nextMaintenance(m) {
-  const p = m.prochain; if (!p) return null;
-  let urgence = 'ok', echeance = '';
-  if (p.heures != null) {
-    const reste = r2(p.heures - m.heures, 1);
-    echeance = reste <= 0 ? `dépassé de ${fmtQ(-reste)} h` : `dans ${fmtQ(reste)} h`;
-    urgence = reste <= 0 ? 'danger' : reste <= 50 ? 'warn' : 'ok';
+/* ---------- Suivi technique du matériel ---------- */
+const addMonths = (d, n) => { const x = D(d); const day = x.getDate(); x.setMonth(x.getMonth() + n); if (x.getDate() < day) x.setDate(0); return iso(x); };
+/** Compteur de référence : heures moteur pour les automoteurs, heures d'utilisation cumulées pour les outils. */
+const matCnt = m => r2(isEngine(m) ? (+m.heures || 0) : (+m.heuresUsage || 0), 1);
+/** Modèles de plan d'entretien par catégorie [type, intitulé, toutes les N heures, tous les N mois]. Indicatifs : à adapter au carnet constructeur. */
+const MAT_PLAN = {
+  tracteur: [['vidange', 'Vidange moteur + filtre à huile', 500, 12], ['filtres', 'Filtre à gazole', 500, null], ['filtres', 'Filtre à air', 1000, 24], ['vidange', 'Huile transmission / hydraulique', 1200, 24], ['graissage', 'Graissage', 50, null]],
+  moissonneuse: [['entretien', 'Révision avant moisson', null, 12], ['vidange', 'Vidange moteur', 300, 12], ['filtres', 'Filtres air / gazole', 300, 12], ['graissage', 'Graissage', 50, null]],
+  ensileuse: [['entretien', 'Révision avant ensilage', null, 12], ['vidange', 'Vidange moteur', 300, 12], ['entretien', 'Couteaux et contre-couteau', 150, null], ['graissage', 'Graissage', 50, null]],
+  manutention: [['vidange', 'Vidange moteur', 500, 12], ['vidange', 'Huile hydraulique', 1000, 24], ['controle', 'Vérification générale périodique (VGP)', null, 6], ['graissage', 'Graissage', 50, null]],
+  pulverisateur: [['controle', 'Contrôle technique obligatoire (périodicité à vérifier)', null, 36], ['entretien', 'Vérification des buses / étalonnage', null, 12], ['entretien', 'Hivernage du circuit', null, 12]],
+  semoir: [['entretien', 'Révision avant semis', null, 12], ['graissage', 'Graissage et visite', 100, null]],
+  dechaumeur: [['entretien', 'Contrôle d’usure (disques, dents, socs)', 150, 12], ['graissage', 'Graissage', 50, null]],
+  charrue: [['entretien', 'Contrôle d’usure (socs, versoirs)', 150, 12], ['graissage', 'Graissage', 50, null]],
+  remorque: [['controle', 'Freinage et éclairage', null, 12], ['pneumatiques', 'Pneumatiques (usure, pression)', null, 12]],
+  divers: [['entretien', 'Contrôle général', null, 12]],
+};
+function lastMaint(m, type) { return [...(m.maintenance || [])].filter(e => e.type === type).sort((a, b) => b.date.localeCompare(a.date))[0]; }
+function planFromTemplate(m) { return (MAT_PLAN[m.cat] || MAT_PLAN.divers).map(([type, label, h, mois]) => { const lm = lastMaint(m, type); return { id: uid('pl'), type, label, h: h || null, mois: mois || null, lastH: lm?.heures ?? matCnt(m), lastDate: lm?.date || TODAY }; }); }
+/** Plan d'entretien d'un matériel (créé à la volée depuis le modèle de sa catégorie, en reprenant l'ancien « prochain entretien »). */
+function plansOf(m) {
+  if (m.plans) return m.plans;
+  m.plans = planFromTemplate(m);
+  const p = m.prochain;
+  if (p) {
+    const it = m.plans.find(x => x.type === p.type && ((p.heures != null && x.h) || (p.date && x.mois)));
+    if (it && p.heures != null) it.lastH = r2(p.heures - it.h, 1);
+    else if (it && p.date) it.lastDate = addMonths(p.date, -it.mois);
+    else m.plans.push({ id: uid('pl'), type: p.type || 'entretien', label: p.label, once: true, dueH: p.heures ?? null, dueD: p.heures != null ? null : p.date });
+    delete m.prochain;
   }
-  if (p.date) {
-    const j = daysBetween(TODAY, p.date);
-    echeance = j < 0 ? `en retard de ${-j} j` : `dans ${j} j`;
-    urgence = j < 0 ? 'danger' : j <= 30 ? 'warn' : 'ok';
-  }
-  return { ...p, urgence, echeance };
+  return m.plans;
+}
+/** Échéance d'un point d'entretien : au premier atteint des deux (heures ou date). */
+function planDue(m, p) {
+  const c = matCnt(m);
+  const dueH = p.once ? p.dueH : p.h ? r2((p.lastH ?? c) + p.h, 1) : null;
+  const dueD = p.once ? p.dueD : p.mois ? addMonths(p.lastDate || TODAY, p.mois) : null;
+  const resteH = dueH != null ? r2(dueH - c, 1) : null, j = dueD ? daysBetween(TODAY, dueD) : null;
+  let urgence = 'ok';
+  if ((resteH != null && resteH <= 0) || (j != null && j < 0)) urgence = 'danger';
+  else if ((resteH != null && resteH <= Math.max(20, (p.h || 200) * 0.1)) || (j != null && j <= 30)) urgence = 'warn';
+  const parts = [];
+  if (resteH != null) parts.push(resteH <= 0 ? `dépassé de ${fmtQ(-resteH)} h` : `dans ${fmtQ(resteH)} h`);
+  if (j != null) parts.push(j < 0 ? `en retard de ${-j} j` : j === 0 ? 'aujourd’hui' : j <= 60 ? `dans ${j} j` : D(dueD).toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' }));
+  const fr = [];
+  if (p.h && dueH != null) fr.push((c - (dueH - p.h)) / p.h);
+  if (p.mois && dueD) fr.push(1 - j / (p.mois * 30.44));
+  const prog = fr.length ? Math.max(0, Math.min(1.15, Math.max(...fr))) : (urgence === 'danger' ? 1 : null);
+  return { ...p, dueH, dueD, resteH, j, urgence, echeance: parts.join(' ou '), prog, heures: dueH, date: dueD };
+}
+const URG = { danger: 0, warn: 1, ok: 2 };
+function matPlanDue(m) { return plansOf(m).map(p => planDue(m, p)).sort((a, b) => URG[a.urgence] - URG[b.urgence] || (b.prog ?? 0) - (a.prog ?? 0)); }
+/** Point d'entretien le plus proche (compatibilité). */
+function nextMaintenance(m) { return matPlanDue(m)[0] || null; }
+/** Statut technique : en service, ou immobilisé par une panne en cours. */
+const matStatus = m => m.panne ? (m.panne.immo ? { k: 'panne', l: 'Immobilisé', c: 'danger' } : { k: 'degrade', l: 'Panne à surveiller', c: 'warn' }) : { k: 'ok', l: 'En service', c: 'ok' };
+function matUsage(m, camp = CURRENT_CAMP) {
+  const ivs = S.interventions.filter(i => i.statut === 'realisee' && (i.materiels || []).includes(m.id));
+  const cur = ivs.filter(i => i.campagne === camp), h = r2(sum(cur, i => i.heures), 1);
+  const last = ivs.sort((a, b) => b.date.localeCompare(a.date))[0];
+  const months = [...Array(12)].map((_, k) => { const d = addMonths(TODAY.slice(0, 7) + '-01', k - 11); const ym = d.slice(0, 7); return { ym, h: r2(sum(ivs.filter(i => i.date.slice(0, 7) === ym), i => i.heures), 1) }; });
+  return { h, ha: r2(sum(cur, i => i.surface), 1), n: cur.length, last, gnr: m.conso ? Math.round(h * m.conso) : null, months };
 }
 
 function stockValue(it) {
@@ -445,11 +494,15 @@ function todoList(horizon = 21) {
     out.push({ kind: 'intervention', cat: 'cultures', icon: IV_ICON[i.type] || 'sprout', sub: INTER_TYPES[i.type], id: i.id, date: i.date, titre: `${i.label} — ${byId('parcelles', i.parcelleId)?.nom}`, detail: `${fmtQ(i.surface)} ha${i.produits.length ? ' · ' + i.produits.map(x => byId('stock', x.itemId)?.nom).filter(Boolean).join(', ') : ''}`, action: 'Valider', ...d });
   });
   S.materiel.forEach(m => {
-    const n = nextMaintenance(m); if (!n) return;
-    let d;
-    if (n.heures != null) { const reste = n.heures - m.heures; if (reste > 80) return; d = { j: 0, urgence: reste <= 0 ? 'danger' : 'warn', groupe: reste <= 0 ? 'retard' : 'semaine', echeance: reste <= 0 ? `Dépassé · ${fmtQ(-reste)} h` : `Dans ${fmtQ(reste)} h` }; }
-    else { d = dueInfo(n.date); if (d.j > horizon) return; }
-    out.push({ kind: 'maintenance', cat: 'materiel', icon: n.type === 'controle' ? 'check' : 'wrench', sub: MAINT_TYPES[n.type] || 'Entretien', id: m.id, date: n.date || TODAY, titre: n.label, detail: `${m.marque} ${m.modele}`, action: 'Saisir', ...d });
+    if (m.panne) out.push({ kind: 'maintenance', cat: 'materiel', icon: 'alert', sub: 'Panne', id: `${m.id}|panne`, date: m.panne.date, titre: m.panne.titre, detail: `${m.marque} ${m.modele}${m.panne.immo ? ' · immobilisé' : ''}`, action: 'Réparé', j: 0, urgence: m.panne.immo ? 'danger' : 'warn', groupe: m.panne.immo ? 'retard' : 'jour', echeance: m.panne.immo ? `Immobilisé · ${daysBetween(m.panne.date, TODAY)} j` : 'À surveiller' });
+    matPlanDue(m).forEach(n => {
+      let d;
+      if (n.urgence === 'danger') d = { j: n.j ?? 0, urgence: 'danger', groupe: 'retard', echeance: n.resteH != null && n.resteH <= 0 ? `Dépassé · ${fmtQ(-n.resteH)} h` : `Retard · ${-n.j} j` };
+      else if (n.urgence === 'warn') d = n.resteH != null && (n.j == null || n.resteH <= Math.max(20, (n.h || 200) * 0.1)) ? { j: 0, urgence: 'warn', groupe: 'semaine', echeance: `Dans ${fmtQ(n.resteH)} h` } : dueInfo(n.dueD);
+      else if (n.dueD && daysBetween(TODAY, n.dueD) <= Math.min(horizon, 120)) d = dueInfo(n.dueD);
+      else return;
+      out.push({ kind: 'maintenance', cat: 'materiel', icon: n.type === 'controle' ? 'check' : 'wrench', sub: MAINT_TYPES[n.type] || 'Entretien', id: `${m.id}|${n.id}`, date: n.dueD || TODAY, titre: n.label, detail: `${m.marque} ${m.modele} · ${fmtQ(matCnt(m))} h`, action: 'Fait', ...d });
+    });
   });
   S.stock.filter(i => i.cat !== 'production' && i.seuil > 0 && i.qte <= i.seuil).forEach(i => out.push({ kind: 'stock', cat: 'stocks', icon: 'box', sub: 'Réapprovisionnement', id: i.id, date: TODAY, titre: i.nom, detail: `${fmtQ(i.qte)} ${i.unite} restants · seuil ${fmtQ(i.seuil)} ${i.unite}`, action: 'Commander', j: 0, urgence: i.qte <= 0 ? 'danger' : 'warn', groupe: i.qte <= 0 ? 'retard' : 'jour', echeance: i.qte <= 0 ? 'Épuisé' : 'Stock faible' }));
   S.ventes.filter(v => v.statut !== 'paye').forEach(v => { const age = daysBetween(v.date, TODAY); const due = addDays(v.date, 30); const d = dueInfo(due); out.push({ kind: 'encaissement', cat: 'ventes', icon: 'euro', sub: 'Encaissement', id: v.id, date: due, titre: `${v.facture} — ${v.acheteur}`, detail: `${fmtQ(v.montant)} € · ${v.statut === 'partiel' ? 'règlement partiel' : 'facturée il y a ' + age + ' j'}`, action: 'Encaissé', ...d, echeance: d.j < 0 ? `Échue · ${-d.j} j` : d.echeance }); });
@@ -731,6 +784,7 @@ function seedDemo() {
   M('semoir').prochain = { label: 'Révision hivernale', type: 'entretien', date: addDays(TODAY, 38) };
   M('manit').prochain = { label: 'Vidange 2 500 h', type: 'vidange', heures: Math.round(M('manit').heures - 10) };
   M('rem').prochain = { label: 'Contrôle freinage', type: 'controle', date: addDays(TODAY, 95) };
+  M('t3').panne = { date: addDays(TODAY, -2), titre: 'Fuite hydraulique au relevage', desc: 'Suintement sur le vérin gauche, niveau à surveiller', immo: false };
   st.materiel.forEach(m => { m.historiqueValeur = [2024, 2025, 2026].filter(y => y >= m.annee).map(y => { const save = CURRENT_CAMP; return { date: `${y}-12-31`, valeur: Math.round(m.prixAchat * Math.pow(1 - ({ tracteur: 0.085, moissonneuse: 0.095, manutention: 0.1 }[m.cat] || 0.11), y - m.annee + 0.5) * (ETATS[m.etat] || 1) / 100) * 100, source: 'Estimation indicative' }; }).filter(h => h.date <= TODAY); });
 
   /* ---- Ventes (acheteurs fictifs) ---- */

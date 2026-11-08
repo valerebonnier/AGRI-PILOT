@@ -2,7 +2,7 @@
 /* =====================================================================
    AGRI PILOT — Interface : icônes, formats, graphiques, structure, routeur
    ===================================================================== */
-const APP_VERSION = '2026.11.08-v17';
+const APP_VERSION = '2026.11.08-v18';
 const ICONS = {
   home: '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>',
   farm: '<path d="M3 21V10l9-6 9 6v11M9 21v-6h6v6M2 21h20"/>',
@@ -354,7 +354,7 @@ ACT.menu = () => go('plus');
 ACT.taskAct = (d, el, e) => {
   e.stopPropagation();
   if (d.kind === 'intervention') ACT.validateIv({ id: d.id });
-  else if (d.kind === 'maintenance') { const m = byId('materiel', d.id); ACT.addMaint({ id: d.id, t: m.prochain?.type === 'controle' ? 'controle' : (m.prochain?.type || 'entretien'), titre: m.prochain?.label }); }
+  else if (d.kind === 'maintenance') { const [mid, pid] = d.id.split('|'); if (pid === 'panne') ACT.matRepair({ id: mid }); else ACT.addMaint({ id: mid, plan: pid }); }
   else if (d.kind === 'stock') ACT.purchase({ item: d.id });
   else if (d.kind === 'encaissement') { byId('ventes', d.id).statut = 'paye'; commit('Vente marquée comme encaissée'); }
   else if (d.kind === 'echeance') { S.echeances.find(x => x.id === d.id).fait = true; commit('Échéance marquée comme faite'); }
@@ -364,7 +364,7 @@ ACT.openTodo = d => {
   UI.notif = false;
   if (d.kind === 'encaissement') { openDrawer('vente', d.id); render(); return; }
   if (d.kind === 'intervention') openDrawer('intervention', d.id);
-  else if (d.kind === 'maintenance') openDrawer('materiel', d.id);
+  else if (d.kind === 'maintenance') { go('materiel'); setTimeout(() => openDrawer('materiel', d.id.split('|')[0]), 30); return; }
   else if (d.kind === 'stock') openDrawer('stock', d.id);
   else if (d.kind === 'echeance') go('pac');
   else if (d.kind === 'document') go('documents');
