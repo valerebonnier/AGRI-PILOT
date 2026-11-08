@@ -626,3 +626,5 @@ table.t tfoot td{font-weight:750;border-top:2px solid var(--border);border-botto
 .op:active{transform:scale(.97)}
 .act-s{height:30px;padding:0 12px;border-radius:9px;border:0;background:var(--c-cult);color:#fff;font-weight:750;font-size:12.5px;cursor:pointer}
 @media (max-width:420px){.tk-act{padding-left:0}}
+.month-h{font-size:13px;font-weight:750;color:var(--text-2);margin:16px 4px 8px;text-transform:capitalize}
+.tk-meta b{display:inline;font-size:inherit;margin:0}

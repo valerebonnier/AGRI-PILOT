@@ -27,7 +27,7 @@ function gettingStarted() {
   return steps;
 }
 VIEWS.dashboard = () => {
-  const camp = PREFS.camp, E = econ(camp), st = stockTotals(), todo = todoList(), todo60 = todoList(60);
+  const camp = PREFS.camp, E = econ(camp), st = stockTotals(), todo = todoList(), todo60 = todoList(400);
   const ivCur = S.interventions.filter(i => i.campagne === CURRENT_CAMP);
   const done = ivCur.filter(i => i.statut === 'realisee').length;
   const parc = sum(S.materiel, m => valeurMateriel(m));
@@ -133,7 +133,7 @@ function tkCard(t) {
 ACT.tkDetail = d => { const ivs = d.id.split(',').map(id => byId('interventions', id)).filter(Boolean); openModal({ title: esc(ivs[0].label), body: `<p class="small muted">${dfr(ivs[0].date)} · ${ivs.length} parcelles · ${nf(sum(ivs, i => i.surface), 1)} ha</p><div class="card">${ivs.map(i => `<div class="mrow" style="--c:var(--c-cult)"><div class="ic">${ic(IV_ICON[i.type])}</div><div class="tx" data-a="openIvFromModal" data-id="${i.id}"><b>${esc(parcName(i.parcelleId))}</b><span>${nf(i.surface, 2)} ha</span></div><button class="act-s" data-a="validateIv" data-id="${i.id}">Fait</button></div>`).join('')}</div>`, foot: `<button type="button" class="btn" data-a="closeModal">Fermer</button><button type="button" class="btn p" data-a="quickIv" data-pids="${ivs.map(i => i.parcelleId).join(',')}" data-plan="${esc(ivs[0].label)}" data-type="${ivs[0].type}">${ic('check')} Fait sur les ${ivs.length}</button>` }); };
 ACT.openIvFromModal = d => { closeModal(); openDrawer('intervention', d.id); };
 VIEWS.taches = () => {
-  const all = todoList(60); const cat = UI.f.taskCat || '', when = UI.f.taskWhen || '';
+  const all = todoList(400); const cat = UI.f.taskCat || '', when = UI.f.taskWhen || '';
   const items = taskItems(all.filter(t => !cat || t.cat === cat));
   const inWhen = t => !when || (when === 'semaine' ? ['jour', 'semaine'].includes(t.groupe) : t.groupe === when);
   const cnt = g => taskItems(all.filter(t => (!cat || t.cat === cat))).filter(t => g === 'semaine' ? ['jour', 'semaine'].includes(t.groupe) : t.groupe === g).length;
@@ -143,8 +143,8 @@ VIEWS.taches = () => {
   <div class="tk-sum">${[['retard', 'En retard', 'late'], ['semaine', 'Cette semaine', 'soon'], ['plus_tard', 'À venir', 'later']].map(([g, l, cls]) => `<button class="${cls} ${when === g ? 'on' : ''}" data-a="taskWhen" data-g="${g}"><b>${cnt(g)}</b><span>${l}</span></button>`).join('')}</div>
   <div class="fchips mt"><button class="fchip ${!cat ? 'on' : ''}" style="--c:var(--text)" data-a="taskCat" data-c="">Tout</button>${catCounts(all).filter(c => c.n).map(c => `<button class="fchip ${cat === c.k ? 'on' : ''}" style="--c:${c.color}" data-a="taskCat" data-c="${c.k}">${ic(c.icon)} ${c.label} <span class="k">${c.n}</span></button>`).join('')}</div>
   ${when || cat ? `<div class="row mt small"><span class="muted">Filtre actif</span><button class="lnk b" style="background:none;border:0;color:var(--primary);cursor:pointer" data-a="taskReset">Tout afficher</button></div>` : ''}
-  ${G.map(([g, l, i]) => { const ts = list.filter(t => t.groupe === g); return ts.length ? `<div class="group-h ${g === 'retard' ? 'late' : ''}">${ic(i)} ${l}<span class="n">${ts.length}</span></div>${ts.map(tkCard).join('')}` : ''; }).join('') || `<div class="card pad mt row">${ic('check')}<span class="muted">Aucune tâche ${when ? 'dans cette période' : ''} ${cat ? 'pour cette catégorie' : ''}.</span></div>`}
-  <div class="formula mt2">Les opérations identiques prévues le même jour sur plusieurs parcelles sont regroupées : « Fait sur les N » les valide toutes en une saisie.</div>`;
+  ${G.map(([g, l, i]) => { const ts = list.filter(t => t.groupe === g); if (!ts.length) return ''; let mo = ''; return `<div class="group-h ${g === 'retard' ? 'late' : ''}">${ic(i)} ${l}<span class="n">${ts.length}</span></div>${ts.map(t => { let h = ''; if (g === 'plus_tard') { const m = D(t.date).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }); if (m !== mo) { mo = m; h = `<div class="month-h">${m}</div>`; } } return h + tkCard(t); }).join('')}`; }).join('') || `<div class="card pad mt row">${ic('check')}<span class="muted">Aucune tâche ${when ? 'dans cette période' : ''} ${cat ? 'pour cette catégorie' : ''}.</span></div>`}
+  <div class="formula mt2">Toutes les tâches de la campagne sont affichées. Les opérations identiques prévues le même jour sur plusieurs parcelles sont regroupées : « Fait sur les N » les valide toutes en une saisie.</div>`;
 };
 ACT.taskWhen = d => { UI.f.taskWhen = UI.f.taskWhen === d.g ? '' : d.g; render(); };
 ACT.taskReset = () => { UI.f.taskWhen = ''; UI.f.taskCat = ''; render(); };
@@ -323,19 +323,40 @@ function parcForm(id, pre = {}) {
   });
 }
 /** Génère les interventions planifiées d'une parcelle depuis l'ITK type (non réalisées). */
-function generateFromItk(p, camp) {
-  const rec = p.cultures[camp]; const itk = S.itk[rec.culture]; if (!itk) return 0;
-  let n = 0;
+/**
+ * Applique l'itinéraire type d'une culture aux parcelles (campagne en cours) :
+ * - crée les travaux manquants (datés à partir d'aujourd'hui ; les étapes déjà passées sont ignorées),
+ * - met à jour les travaux encore planifiés issus de l'ITK (date, produits, doses, matériel),
+ * - supprime les travaux planifiés dont l'étape a été retirée de l'ITK.
+ * Les travaux réalisés ne sont jamais modifiés.
+ */
+function syncItkParcel(p, camp = CURRENT_CAMP) {
+  const rec = p.cultures[camp]; const itk = rec && S.itk[rec.culture]; const r = { created: 0, updated: 0, removed: 0, past: 0 };
+  if (!itk) return r;
+  const labels = itk.steps.map(s => s.label);
   itk.steps.forEach(sp => {
     const date = addDays(rec.semis, sp.off);
-    if (S.interventions.some(i => i.parcelleId === p.id && i.campagne === camp && i.label === sp.label)) return;
-    S.interventions.push({ id: uid('iv'), campagne: camp, parcelleId: p.id, date, type: sp.type, label: sp.label, statut: 'planifiee', surface: p.surface, produits: sp.produits.filter(x => byId('stock', x.itemId)).map(x => ({ ...x })), materiels: sp.materiels.filter(m => byId('materiel', m)), heures: r2(sp.hHa * p.surface, 1), mo: '', meteo: '', obs: '', photos: [], fromItk: true });
-    n++;
+    const ex = S.interventions.filter(i => i.parcelleId === p.id && i.campagne === camp && i.label === sp.label);
+    const prods = sp.produits.filter(x => byId('stock', x.itemId)).map(x => ({ ...x })), mats = sp.materiels.filter(m => byId('materiel', m));
+    if (ex.length) { ex.filter(i => i.statut === 'planifiee' && i.fromItk).forEach(i => { Object.assign(i, { type: sp.type, date: date < TODAY && i.date >= TODAY ? i.date : date, produits: prods, materiels: mats, heures: r2(sp.hHa * p.surface, 1), surface: p.surface }); r.updated++; }); return; }
+    if (date < TODAY) { r.past++; return; }
+    S.interventions.push({ id: uid('iv'), campagne: camp, parcelleId: p.id, date, type: sp.type, label: sp.label, statut: 'planifiee', surface: p.surface, produits: prods, materiels: mats, heures: r2(sp.hHa * p.surface, 1), mo: '', meteo: '', obs: '', photos: [], fromItk: true });
+    r.created++;
   });
-  if (!rec.recoltePrev) { const r = itk.steps.find(s => s.type === 'recolte'); if (r) rec.recoltePrev = addDays(rec.semis, r.off); }
+  const before = S.interventions.length;
+  S.interventions = S.interventions.filter(i => !(i.parcelleId === p.id && i.campagne === camp && i.statut === 'planifiee' && i.fromItk && !labels.includes(i.label)));
+  r.removed = before - S.interventions.length;
+  if (!rec.recoltePrev) { const rs = itk.steps.find(s => s.type === 'recolte'); if (rs) rec.recoltePrev = addDays(rec.semis, rs.off); }
   S.interventions.sort((a, b) => a.date.localeCompare(b.date));
-  return n;
+  return r;
 }
+function syncItkCulture(culture) {
+  const tot = { created: 0, updated: 0, removed: 0, past: 0, parcelles: 0 };
+  S.parcelles.filter(p => p.cultures[CURRENT_CAMP]?.culture === culture).forEach(p => { const r = syncItkParcel(p); tot.parcelles++; ['created', 'updated', 'removed', 'past'].forEach(k => tot[k] += r[k]); });
+  return tot;
+}
+const syncMsg = t => t.parcelles ? `Itinéraire appliqué à ${t.parcelles} parcelle(s) : ${t.created} travail(x) créé(s)${t.updated ? `, ${t.updated} mis à jour` : ''}${t.removed ? `, ${t.removed} retiré(s)` : ''}${t.past ? ` · ${t.past} étape(s) déjà passée(s) non créée(s)` : ''}` : 'Itinéraire enregistré (aucune parcelle de cette culture cette campagne)';
+function generateFromItk(p, camp) { return syncItkParcel(p, camp).created; }
 ACT.delParc = d => openModal({ title: 'Supprimer la parcelle ?', body: `<p>La parcelle <b>${esc(parcName(d.id))}</b> et ses interventions <b>planifiées</b> seront supprimées. Les interventions réalisées sont conservées dans l'historique des stocks.</p>`, submit: 'Supprimer', onSubmit: () => { S.parcelles = S.parcelles.filter(p => p.id !== d.id); S.interventions = S.interventions.filter(i => !(i.parcelleId === d.id && i.statut === 'planifiee')); closeDrawer(); commit('Parcelle supprimée'); } });
 ACT.exportParc = () => copyText(toCSV([['Nom', 'Commune', 'Cadastre', 'Ilot', 'N° PAC', 'Surface (ha)', 'Sol', 'Statut foncier', 'Latitude', 'Longitude', `Culture ${campLabel(CURRENT_CAMP)}`, 'Code PAC', 'Variété', 'Semis'], ...S.parcelles.map(p => { const c = curCult(p); return [p.nom, p.commune, p.cadastre, p.ilot, p.numPac, String(p.surface).replace('.', ','), p.sol, p.statutFoncier, p.centre?.[0], p.centre?.[1], CULTURES[c?.culture]?.nom || '', CULTURES[c?.culture]?.pac || '', c?.variete || '', c?.semis || '']; })]), 'Parcellaire copié au format CSV (séparateur ;)');
 ACT.importParc = () => openModal({
@@ -398,7 +419,7 @@ DRAWERS.parcelle = id => {
   }
   return { title: `${esc(p.nom)} <span class="muted small">· ${nf(p.surface, 2)} ha</span>`, body };
 };
-ACT.genItk = d => { const p = byId('parcelles', d.id); const n = generateFromItk(p, CURRENT_CAMP); commit(n ? `${n} intervention(s) planifiée(s) créée(s)` : 'Toutes les étapes de l’ITK existent déjà'); };
+ACT.genItk = d => { const p = byId('parcelles', d.id); const r = syncItkParcel(p); commit(r.created || r.updated ? `${r.created} travail(x) créé(s)${r.updated ? `, ${r.updated} mis à jour` : ''}${r.past ? ` · ${r.past} étape(s) passée(s) ignorée(s)` : ''}` : r.past ? `Aucune étape à venir : ${r.past} étape(s) déjà passée(s) (dates calculées depuis le semis)` : 'L’itinéraire est vide ou déjà appliqué'); };
 function ivTimeline(ivs) {
   if (!ivs.length) return '<div class="empty">Aucune intervention</div>';
   return `<div class="timeline">${ivs.map(i => `<div class="tl ${i.statut === 'planifiee' ? 'plan' : ''}" data-a="openIv" data-id="${i.id}" style="cursor:pointer"><div class="d">${dfr(i.date)} · ${INTER_TYPES[i.type]}</div><div class="row"><b>${esc(i.label)}</b><span class="sp"></span>${i.statut === 'realisee' ? `<span class="small num">${eur(i.coutIntrants)}</span>` : '<span class="badge">Planifiée</span>'}</div><div class="small muted">${i.produits.map(x => `${esc(byId('stock', x.itemId)?.nom || '?')} ${nfx(x.dose, 2)} ${byId('stock', x.itemId)?.unite || ''}/ha`).join(' · ') || '—'}${i.recolteQte ? ` · <b>${nf(i.recolteQte, 1)} t récoltées</b>` : ''}</div></div>`).join('')}</div>`;
@@ -425,14 +446,17 @@ function itkModeles() {
   const surf = sum(S.parcelles.filter(p => p.cultures[CURRENT_CAMP]?.culture === k), p => p.surface);
   return `<div class="chips mb">${keys.map(c => `<span class="chip ${c === k ? 'on' : ''}" data-a="itkC" data-c="${c}"><i class="sw" style="background:${CULTURES[c]?.color}"></i>${esc(CULTURES[c]?.nom || c)}</span>`).join('')}</div>
   <div class="grid g-kpi mb">${kpi('layers', 'Étapes', steps.length, `Semis type : ${itk.semisType.split('-').reverse().join('/')}`)}${kpi('box', 'Intrants + carburant / ha', eur(ti), 'aux prix moyens actuels')}${kpi('tractor', 'Mécanisation / ha', eur(tm), 'coût horaire du matériel')}${kpi('map', `Surface ${campLabel(CURRENT_CAMP)}`, `${nf(surf, 1)} ha`, `Coût total estimé <b>${keur((ti + tm) * surf)}</b>`)}</div>
-  <div class="card"><div class="card-h"><h3>ITK type — ${esc(CULTURES[k]?.nom)}</h3><span class="sp"></span><button class="btn sm" data-a="itkStep" data-c="${k}">${ic('plus')} Étape</button></div>
+  ${(() => { const ps = S.parcelles.filter(p => p.cultures[CURRENT_CAMP]?.culture === k); const ivs = S.interventions.filter(i => i.campagne === CURRENT_CAMP && ps.some(p => p.id === i.parcelleId)); return `<div class="note ${ps.length && !ivs.length && steps.length ? 'warn' : 'info'} mb">${ic('sprout')}<span>${ps.length ? `${ps.length} parcelle(s) en ${esc(CULTURES[k]?.nom.toLowerCase())} · ${ivs.filter(i => i.statut === 'planifiee').length} travaux prévus · ${ivs.filter(i => i.statut === 'realisee').length} réalisés. Chaque modification de l’itinéraire met à jour les travaux prévus de ces parcelles.` : `Aucune parcelle en ${esc(CULTURES[k]?.nom.toLowerCase())} sur la campagne ${campLabel(CURRENT_CAMP)}.`}</span>${ps.length && steps.length ? `<button class="btn sm" data-a="itkSync" data-c="${k}">Appliquer</button>` : ''}</div>`; })()}
+  <div class="card"><div class="card-h"><h3>ITK type — ${esc(CULTURES[k]?.nom)}</h3><span class="sp"></span><button class="btn sm" data-a="itkSemis" data-c="${k}">${ic('calendar')} Semis</button><button class="btn sm" data-a="itkStep" data-c="${k}">${ic('plus')} Étape</button></div>
   <div class="tbl-wrap"><table class="t"><thead><tr><th>J / semis</th><th>Étape</th><th>Type</th><th>Produits (dose/ha)</th><th>Matériel</th><th class="n">h/ha</th><th class="n">Intrants €/ha</th><th class="n">Méca €/ha</th><th></th></tr></thead><tbody>
   ${steps.map((s, i) => `<tr><td class="num">${s.off > 0 ? '+' : ''}${s.off}</td><td class="cell-main">${esc(s.label)}</td><td>${INTER_TYPES[s.type]}</td><td class="small">${s.produits.map(x => { const it = byId('stock', x.itemId); return it ? `${esc(it.nom)} — ${nfx(x.dose, 2)} ${it.unite}` : '<span class="badge warn">article absent</span>'; }).join('<br>') || '—'}</td><td class="small">${s.materiels.map(matName).join(' + ')}</td><td class="n">${nfx(s.hHa, 2)}</td><td class="n">${eur(costs[i].intr)}</td><td class="n">${eur(costs[i].meca)}</td><td class="n"><button class="btn xs g" data-a="itkStep" data-c="${k}" data-s="${s.id}">${ic('edit')}</button><button class="btn xs g" data-a="itkDel" data-c="${k}" data-s="${s.id}">${ic('trash')}</button></td></tr>`).join('') || `<tr><td colspan="9" class="empty">Aucune étape pour cette culture : ajoutez vos interventions types avec « + Étape » (travail du sol, semis, fertilisation…).</td></tr>`}
   </tbody><tfoot><tr><td colspan="6">Total par hectare</td><td class="n">${eur(ti)}</td><td class="n">${eur(tm)}</td><td></td></tr></tfoot></table></div></div>
   <div class="formula">Intrants €/ha = Σ dose × prix moyen pondéré du stock + carburant (h/ha × consommation L/h × prix du GNR). Méca €/ha = h/ha × coût horaire du matériel (hors carburant).</div>`;
 }
 ACT.itkC = d => { UI.f.itkC = d.c; render(); };
-ACT.itkDel = d => { const it = S.itk[d.c]; it.steps = it.steps.filter(s => s.id !== d.s); commit('Étape supprimée'); };
+ACT.itkSync = d => commit(syncMsg(syncItkCulture(d.c)));
+ACT.itkSemis = d => { const itk = S.itk[d.c]; const ps = S.parcelles.filter(p => p.cultures[CURRENT_CAMP]?.culture === d.c); openModal({ title: `Date de semis — ${esc(CULTURES[d.c]?.nom)}`, body: `<p class="small muted">Les dates des étapes sont calculées à partir du semis (J+0). Indiquez la date de semis de cette campagne : elle s’applique aux parcelles de cette culture.</p><label class="field"><span>Date de semis ${campLabel(CURRENT_CAMP)}</span><input class="inp" type="date" name="semis" value="${ps[0]?.cultures[CURRENT_CAMP].semis || ''}" required></label>`, onSubmit: f => { if (!f.semis) throw new Error('Date requise'); itk.semisType = f.semis.slice(5); ps.forEach(p => { p.cultures[CURRENT_CAMP].semis = f.semis; p.cultures[CURRENT_CAMP].recoltePrev = null; S.interventions.filter(i => i.parcelleId === p.id && i.campagne === CURRENT_CAMP && i.statut === 'planifiee' && i.fromItk).forEach(i => { const st = itk.steps.find(x => x.label === i.label); if (st) i.date = addDays(f.semis, st.off); }); }); commit(syncMsg(syncItkCulture(d.c))); } }); };
+ACT.itkDel = d => { const it = S.itk[d.c]; it.steps = it.steps.filter(s => s.id !== d.s); commit(syncMsg(syncItkCulture(d.c))); };
 ACT.itkStep = d => {
   const itk = S.itk[d.c]; const s = d.s ? itk.steps.find(x => x.id === d.s) : { type: 'protection', label: '', off: 0, produits: [], materiels: [], hHa: 0.1 };
   const intr = S.stock.filter(x => x.cat !== 'production' && x.cat !== 'carburants');
@@ -445,8 +469,8 @@ ACT.itkStep = d => {
     onSubmit: f => {
       const n = { label: f.label, type: f.type, off: +f.off || 0, produits: [0, 1].filter(i => f['p' + i] && +f['d' + i] > 0).map(i => ({ itemId: f['p' + i], dose: +f['d' + i] })), materiels: [].concat(f.mat || []), hHa: +f.hHa || 0 };
       if (!n.label) throw new Error('Libellé requis');
-      if (d.s) Object.assign(s, n); else itk.steps.push({ id: uid('stp'), ...n });
-      commit('Itinéraire mis à jour');
+      if (d.s) { const old = s.label; Object.assign(s, n); if (old !== n.label) S.interventions.filter(i => i.statut === 'planifiee' && i.fromItk && i.label === old && byId('parcelles', i.parcelleId)?.cultures[i.campagne]?.culture === d.c).forEach(i => i.label = n.label); } else itk.steps.push({ id: uid('stp'), ...n });
+      commit(syncMsg(syncItkCulture(d.c)));
     }
   });
 };
@@ -1054,5 +1078,7 @@ ACT.startEmpty = () => openModal({
   document.body.insertAdjacentHTML('beforeend', `<div id="scrimD" class="scrim" data-a="closeDrawer"></div><aside id="drawer" class="drawer" aria-label="Fiche"></aside><div id="scrimM" class="scrim m" data-a="closeModal"></div><div id="modal" class="modal" role="dialog"></div><div id="toasts" class="toast-box"></div>
   <div id="searchPop" class="search-pop" data-a="closeSearchBg"><div class="search-box"><div style="position:relative"><span style="position:absolute;left:16px;top:18px;color:var(--faint)">${ic('search')}</span><input class="inp" placeholder="Rechercher dans l’exploitation…" data-in="search"></div><div class="res"></div></div></div>`);
   ACT.closeSearchBg = (d, el, e) => { if (e.target.id === 'searchPop') ACT.closeSearch(); };
+  // Mise à jour : applique une fois les itinéraires saisis aux parcelles d'une ferme réelle
+  try { if (S.onboarded && !S.demo && !S.itkSync1) { Object.keys(S.itk).forEach(k => syncItkCulture(k)); S.itkSync1 = true; saveState(); } } catch (e) { }
   route();
 })();
