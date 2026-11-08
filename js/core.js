@@ -33,7 +33,23 @@ const CULTURES = {
   mais: { nom: 'Maïs grain', color: '#E07A35', pac: 'MIS', cours: 'mais' },
   pois: { nom: 'Pois protéagineux', color: '#6FA858', pac: 'PPR', cours: 'pois' },
   pdt: { nom: 'Pommes de terre', color: '#94664A', pac: 'PTC', cours: 'pdt' },
-  legumes: { nom: 'Légumes', color: '#3FA38C', pac: 'LEG', cours: null },
+  triticale: { nom: 'Triticale', color: '#B89A4E', pac: 'TTH', cours: null },
+  seigle: { nom: 'Seigle', color: '#9C8452', pac: 'SGH', cours: null },
+  avoine: { nom: 'Avoine', color: '#CDB979', pac: 'AVH', cours: null },
+  epeautre: { nom: 'Épeautre', color: '#B5895A', pac: 'EPE', cours: null },
+  sorgho: { nom: 'Sorgho', color: '#B5553A', pac: 'SOG', cours: null },
+  mais_ens: { nom: 'Maïs ensilage', color: '#C9873A', pac: 'MIE', cours: null },
+  tournesol: { nom: 'Tournesol', color: '#F2B705', pac: 'TRN', cours: null },
+  lin: { nom: 'Lin', color: '#6E8FD6', pac: 'LIP', cours: null },
+  soja: { nom: 'Soja', color: '#8FAF3C', pac: 'SOJ', cours: null },
+  feverole: { nom: 'Féverole', color: '#5C8A4A', pac: 'FVL', cours: null },
+  lentille: { nom: 'Lentille', color: '#A86A3C', pac: 'LEC', cours: null },
+  betterave: { nom: 'Betterave sucrière', color: '#C45A8A', pac: 'BTN', cours: null },
+  chanvre: { nom: 'Chanvre', color: '#3F8F6A', pac: 'CHV', cours: null },
+  luzerne: { nom: 'Luzerne', color: '#4FA37A', pac: 'LUZ', cours: null },
+  prairie_t: { nom: 'Prairie temporaire', color: '#6DB37F', pac: 'PTR', cours: null },
+  legumes: { nom: 'Légumes plein champ', color: '#3FA38C', pac: 'LEG', cours: null },
+  jachere: { nom: 'Jachère', color: '#A3A89A', pac: 'J6S', cours: null },
   prairie: { nom: 'Prairie permanente', color: '#3E8E5E', pac: 'PPH', cours: null },
 };
 const INTER_TYPES = {
@@ -57,6 +73,7 @@ const MAT_CATS = {
 };
 const MAINT_TYPES = { entretien: 'Entretien', vidange: 'Vidange', filtres: 'Filtres', pneumatiques: 'Pneumatiques', reparation: 'Réparation / panne', controle: 'Contrôle réglementaire' };
 const ENGINE_CATS = ['tracteur', 'moissonneuse', 'ensileuse', 'manutention'];
+const isEngine = m => m.moteur != null ? !!m.moteur : ENGINE_CATS.includes(m.cat);
 const ETATS = { excellent: 1.08, bon: 1, moyen: 0.9, mauvais: 0.78 };
 
 /* ---------- Persistance locale ---------- */
@@ -163,7 +180,7 @@ function applyIntervention(iv, o = {}) {
   (iv.materiels || []).forEach(mid => {
     const m = byId('materiel', mid); if (!m) return;
     if (m.conso) litres += m.conso * iv.heures;
-    if (ENGINE_CATS.includes(m.cat)) m.heures = r2(m.heures + iv.heures, 1);
+    if (isEngine(m)) m.heures = r2((m.heures || 0) + iv.heures, 1);
     m.heuresUsage = r2((m.heuresUsage || 0) + iv.heures, 1);
   });
   litres = r2(litres, 1);
@@ -206,7 +223,7 @@ function cancelIntervention(iv) {
     if (m.type === 'entree') it.qte = r2(it.qte - m.qte, 3);
   });
   S.mouvements = S.mouvements.filter(m => m.ref !== iv.id);
-  (iv.materiels || []).forEach(mid => { const m = byId('materiel', mid); if (!m) return; if (ENGINE_CATS.includes(m.cat)) m.heures = r2(m.heures - iv.heures, 1); });
+  (iv.materiels || []).forEach(mid => { const m = byId('materiel', mid); if (!m) return; if (isEngine(m)) m.heures = r2((m.heures || 0) - iv.heures, 1); });
   if (iv.type === 'recolte') { const rec = byId('parcelles', iv.parcelleId)?.cultures[iv.campagne]; if (rec) rec.rdtReel = null; }
   iv.statut = 'planifiee'; iv.carburant = null; iv.coutIntrants = 0;
   iv.produits = iv.produits.map(p => ({ itemId: p.itemId, dose: p.dose }));
@@ -258,7 +275,7 @@ function coursAt(key, daysAgo) {
 }
 function coursVar(key, days) { const a = coursAt(key, days), b = lastCours(key); if (!a || !b || !a.prix) return null; return (b.prix - a.prix) / a.prix; }
 
-function materielAge(m, camp = CURRENT_CAMP) { return Math.max(1, camp - m.annee); }
+function materielAge(m, camp = CURRENT_CAMP) { return m.annee ? Math.max(1, camp - m.annee) : null; }
 function amortAnnuel(m) { return r2((m.prixAchat * 0.8) / (m.dureeAmort || 10)); }
 function assuranceAnnuelle(m) { return r2(m.prixAchat * 0.006); }
 function maintCost(m, camp, types) { return r2(sum(m.maintenance.filter(e => campOf(e.date) === camp && (!types || types.includes(e.type))), e => e.coutPieces + e.coutMO)); }
@@ -276,11 +293,11 @@ function coutHoraire(m, camp = CURRENT_CAMP - 1) {
 }
 /** Estimation indicative de la valeur de revente (modèle de décote simplifié). */
 function estimationRevente(m) {
-  const age = Math.max(0, CURRENT_CAMP - 1 - m.annee + 0.5);
+  const age = m.annee ? Math.max(0, CURRENT_CAMP - 1 - m.annee + 0.5) : 0;
   const taux = { tracteur: 0.085, moissonneuse: 0.095, manutention: 0.1 }[m.cat] || 0.11;
   let v = m.prixAchat * Math.pow(1 - taux, age);
   let fh = 1;
-  if (ENGINE_CATS.includes(m.cat) && m.heuresAn) {
+  if (isEngine(m) && m.heuresAn && m.annee) {
     const attendu = age * m.heuresAn;
     fh = Math.min(1.1, Math.max(0.8, 1 - 0.05 * ((m.heures - attendu) / 1000)));
   }
@@ -433,7 +450,7 @@ function globalSearch(q) {
   const hit = s => norm(s).includes(q);
   S.parcelles.forEach(p => { if (hit(p.nom) || hit(p.commune) || hit(CULTURES[p.cultures[CURRENT_CAMP]?.culture]?.nom)) res.push({ kind: 'parcelle', id: p.id, titre: p.nom, sub: `${fmtQ(p.surface)} ha · ${p.commune}` }); });
   S.stock.forEach(i => { if (hit(i.nom) || hit(i.lot) || hit(i.emplacement)) res.push({ kind: 'stock', id: i.id, titre: i.nom, sub: `${fmtQ(i.qte)} ${i.unite} · ${i.emplacement}` }); });
-  S.materiel.forEach(m => { if (hit(`${m.marque} ${m.modele}`) || hit(m.immat) || hit(MAT_CATS[m.cat])) res.push({ kind: 'materiel', id: m.id, titre: `${m.marque} ${m.modele}`, sub: `${MAT_CATS[m.cat]} · ${m.annee}` }); });
+  S.materiel.forEach(m => { if (hit(`${m.marque} ${m.modele}`) || hit(m.immat) || hit(MAT_CATS[m.cat])) res.push({ kind: 'materiel', id: m.id, titre: `${m.marque} ${m.modele}`, sub: `${MAT_CATS[m.cat]}${m.annee ? ' · ' + m.annee : ''}` }); });
   S.ventes.forEach(v => { if (hit(v.facture) || hit(v.acheteur) || hit(v.produit)) res.push({ kind: 'vente', id: v.id, titre: `${v.facture} — ${v.produit}`, sub: `${v.acheteur} · ${v.date}` }); });
   S.documents.forEach(d => { if (hit(d.nom) || hit(d.cat)) res.push({ kind: 'document', id: d.id, titre: d.nom, sub: d.cat }); });
   S.interventions.forEach(i => { if (hit(i.label) && res.length < 60) res.push({ kind: 'intervention', id: i.id, titre: `${i.label} — ${byId('parcelles', i.parcelleId)?.nom}`, sub: `${i.date} · ${i.statut === 'realisee' ? 'réalisée' : 'planifiée'}` }); });
