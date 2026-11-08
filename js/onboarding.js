@@ -52,14 +52,14 @@ const OB_FAMILLES = [
   ['Fourrages & autres surfaces', ['prairie', 'prairie_t', 'luzerne', 'jachere']],
 ];
 const OB_CULTURES = OB_FAMILLES.flatMap(f => f[1]);
-const OB_STEPS = [['profil', 'Vous'], ['ferme', 'Ma ferme'], ['productions', 'Mes productions'], ['repartition', 'Mes surfaces'], ['parcelles', 'Mes parcelles'], ['materiel', 'Mon matériel'], ['forfait', 'Mon forfait'], ['options', 'Options'], ['recap', 'C’est prêt']];
+const OB_STEPS = [['profil', 'Vous'], ['ferme', 'Ma ferme'], ['productions', 'Mes productions'], ['itk', 'Mes itinéraires'], ['repartition', 'Mes surfaces'], ['parcelles', 'Mes parcelles'], ['materiel', 'Mon matériel'], ['forfait', 'Mon forfait'], ['options', 'Options'], ['recap', 'C’est prêt']];
 const obIdx = k => OB_STEPS.findIndex(x => x[0] === k);
 const ROLES_OB = [['exploitant', 'Chef·fe d’exploitation', 'farm'], ['associe', 'Associé·e', 'users'], ['salarie', 'Salarié·e', 'tractor'], ['conseil', 'Conseiller·e / comptable', 'chart']];
 const OB_KEY = 'agripilot.onboarding.v3';
 let OB = null;
 function obLoad() {
-  try { const d = JSON.parse(localStorage.getItem(OB_KEY) || 'null'); if (d && d.v === 3) { OB = d; OB.rep = OB.rep || {}; return; } } catch (e) { }
-  OB = { v: 3, step: -1, nom: '', prenom: '', nomFam: '', role: 'exploitant', email: '', tel: '', siret: '', pacage: '', forme: 'EARL', dept: '', cultures: [], rep: {}, parcelles: [], materiel: {}, genTasks: true, plan: null, cycle: 'annuel', options: [] };
+  try { const d = JSON.parse(localStorage.getItem(OB_KEY) || 'null'); if (d && d.v === 3) { OB = d; OB.rep = OB.rep || {}; OB.itk = OB.itk || {}; return; } } catch (e) { }
+  OB = { v: 3, step: -1, nom: '', prenom: '', nomFam: '', role: 'exploitant', email: '', tel: '', siret: '', pacage: '', forme: 'EARL', dept: '', cultures: [], rep: {}, itk: {}, parcelles: [], materiel: {}, genTasks: true, plan: null, cycle: 'annuel', options: [] };
 }
 function obSave() { try { localStorage.setItem(OB_KEY, JSON.stringify(OB)); } catch (e) { } }
 function obValid(step) {
@@ -81,7 +81,7 @@ function renderOnboarding() {
   if (OB.step < 0) { renderWelcome(); return; }
   if (OB_STEPS[OB.step][0] === 'forfait' && !OB.plan) OB.plan = planReco();
   const step = OB.step, key = OB_STEPS[step][0], err = obValid(step);
-  const body = { profil: obProfil, ferme: obFerme, productions: obProductions, repartition: obRepartition, parcelles: obParcelles, materiel: obMateriel, forfait: obForfait, options: obOptions, recap: obRecap }[key]();
+  const body = { profil: obProfil, ferme: obFerme, productions: obProductions, itk: obItk, repartition: obRepartition, parcelles: obParcelles, materiel: obMateriel, forfait: obForfait, options: obOptions, recap: obRecap }[key]();
   document.getElementById('app').className = 'app ob-mode';
   document.getElementById('app').innerHTML = `<div class="ob">
     <header class="ob-top"><div class="row"><span class="brand-logo" style="width:32px;height:32px;border-radius:10px">${ic('leaf')}</span><b>AGRI PILOT</b><span class="sp"></span><span class="small muted b">${esc(OB_STEPS[step][1])} · ${step + 1}/${OB_STEPS.length}</span></div>
@@ -203,6 +203,7 @@ ACT.obFinish = () => {
   matUnits().forEach(u => { const p = MAT_PRESETS[u.k]; const n = OB.materiel[u.k].length; const marque = u.marque === 'Autre' ? (u.marqueLibre || '').trim() : u.marque; const h = parseFloat(String(u.heures || '').replace(',', '.')); materiel.push({ id: uid('mat'), preset: u.k, cat: p.cat, moteur: p.moteur, marque: marque || p.label, modele: (u.modele || '').trim() || (marque ? p.label : '') + (n > 1 ? ` ${u.i + 1}` : ''), annee: null, serie: '', immat: '', heures: h > 0 ? h : 0, puissance: null, dateAchat: '', prixAchat: 0, conso: p.conso, heuresAn: p.heuresAn, etat: 'bon', dureeAmort: p.dureeAmort, valeurManuelle: null, maintenance: [], prochain: null, historiqueValeur: [], heuresUsage: 0 }); });
   // ITK : remplace les matériels types par ceux de la ferme
   const itk = tpl.itk;
+  OB.cultures.forEach(k => { const o = obItkOf(k); itk[k] = { culture: k, semisType: o.semisType, steps: o.steps.filter(x => x.on).map(({ on, ...x }) => ({ ...x, produits: (x.produits || []).map(y => ({ ...y })), materiels: [...(x.materiels || [])] })).sort((a, b) => a.off - b.off) }; });
   Object.values(itk).forEach(t => t.steps.forEach(s => {
     const out = [];
     s.materiels.forEach(mid => { const pk = ITK_MAT_PRESET[mid]; const alt = { pulverisateur: ['pulve_auto'], semoir: ['semoir_direct', 'semoir_mono'], dechaumeur: ['cultivateur', 'herse_rot', 'striptill'], telescopique: ['chargeur'], remorque: ['camion', 'plateau'] }[pk] || []; let cands = materiel.filter(m => m.preset === pk); if (!cands.length) cands = materiel.filter(m => alt.includes(m.preset)); if (!cands.length) return; const idx = pk === 'tracteur' ? Math.min(cands.length - 1, +(mid.slice(1)) - 1 || 0) : 0; const m = cands[Math.max(0, idx)]; if (!out.includes(m.id)) out.push(m.id); });
@@ -373,3 +374,50 @@ ACT.aboOpt = d => { const i = ABO.options.indexOf(d.v); i >= 0 ? ABO.options.spl
 ACT.profilEdit = () => { const p = S.profil || {}; openModal({ title: 'Mon profil', body: `<div class="grid2"><label class="field"><span>Prénom</span><input class="inp" name="prenom" value="${esc(p.prenom || '')}"></label><label class="field"><span>Nom</span><input class="inp" name="nom" value="${esc(p.nom || '')}"></label></div><label class="field"><span>Rôle</span><select class="inp" name="role">${opts(ROLES_OB.map(r => [r[0], r[1]]), p.role)}</select></label><div class="grid2"><label class="field"><span>E-mail</span><input class="inp" type="email" name="email" value="${esc(p.email || '')}"></label><label class="field"><span>Téléphone</span><input class="inp" type="tel" name="tel" value="${esc(p.tel || '')}"></label></div>`, onSubmit: f => { S.profil = { prenom: f.prenom.trim(), nom: f.nom.trim(), role: f.role, email: f.email.trim(), tel: f.tel.trim() }; if (!S.demo) { S.exploitation.exploitant = `${S.profil.prenom} ${S.profil.nom}`.trim(); } commit('Profil enregistré'); } }); };
 /** Écran affiché à la place d'un module non inclus (après l'essai). */
 function lockedView(route) { const k = planOfRoute(route), r = ROUTES.find(x => x[0] === route); const opt = Object.entries(OPTIONS).find(([, o]) => o.modules?.includes(route)); return `<div class="lock card pad"><span class="lock-ic">${ic('lock')}</span><h2>${esc(r?.[1] || 'Module')}</h2><p>Ce module est inclus dans le forfait <b>${PLANS[k]?.nom}</b>${opt ? ` ou avec l’option « ${opt[1].nom} »` : ''}. Vos données sont conservées.</p><button class="btn p" data-a="aboEdit">${ic('star')} Voir les forfaits</button></div>`; }
+
+/* ---- Étape : itinéraires techniques (base proposée, adaptable) ---- */
+let OB_TPL = null;
+const obTpl = () => OB_TPL || (OB_TPL = seedDemo());
+const OB_ITK_TYPES = ['travail_sol', 'semis', 'fertilisation', 'desherbage', 'protection', 'irrigation', 'recolte', 'autre'];
+function genericItk(k) {
+  const spring = ['tournesol', 'soja', 'sorgho', 'mais_ens', 'lin', 'betterave', 'chanvre', 'lentille', 'feverole', 'orge_p', 'pois', 'mais', 'pdt', 'legumes'].includes(k), autumn = ['triticale', 'seigle', 'avoine', 'epeautre'].includes(k);
+  const perennial = ['prairie', 'prairie_t', 'luzerne', 'jachere'].includes(k);
+  const md = spring ? '04-15' : autumn ? '10-15' : '03-01';
+  const S_ = (type, label, off) => ({ id: uid('stp'), type, label, off, produits: [], materiels: [], hHa: type === 'recolte' ? 0.4 : 0.15, on: true });
+  const steps = perennial ? [S_('fertilisation', 'Fertilisation', 20), S_('recolte', 'Fauche / récolte', 90)] : [S_('travail_sol', 'Préparation du sol', -15), S_('semis', 'Semis', 0), S_('desherbage', 'Désherbage', spring ? 25 : 35), S_('fertilisation', 'Fertilisation', spring ? 40 : 120), S_('protection', 'Protection fongicide / ravageurs', spring ? 70 : 190), S_('recolte', 'Récolte', spring ? 160 : 270)];
+  return { semisType: md, steps, generic: true };
+}
+function obItkOf(k) {
+  if (OB.itk[k]) return OB.itk[k];
+  const t = obTpl().itk[k];
+  OB.itk[k] = t && t.steps.length ? { semisType: t.semisType, steps: t.steps.map(x => ({ ...x, produits: x.produits.map(y => ({ ...y })), materiels: [...x.materiels], on: true })) } : genericItk(k);
+  return OB.itk[k];
+}
+const obSemis = k => { const md = obItkOf(k).semisType, yr = +md.slice(0, 2) >= 8 ? CURRENT_CAMP - 1 : CURRENT_CAMP; return `${yr}-${md}`; };
+const obProdName = id => obTpl().stock.find(x => x.id === id)?.nom || '';
+function obItk() {
+  const open = OB.itkOpen ?? OB.cultures[0];
+  return `<h1 class="ob-h">Vos itinéraires techniques</h1><p class="ob-p">Voici une base pour chaque culture. Décochez ce que vous ne faites pas, ajustez les dates, ajoutez vos étapes : vos tâches seront créées à partir de ces itinéraires.</p>
+  ${OB.cultures.map(k => { const o = obItkOf(k), sem = obSemis(k), on = o.steps.filter(x => x.on), op = open === k; return `<div class="oi ${op ? 'open' : ''}" style="--c:${CULTURES[k].color}">
+    <button class="oi-h" data-a="obItkOpen" data-k="${k}"><span class="sw"></span><span class="tx"><b>${CULTURES[k].nom}</b><small>${on.length} étape${on.length > 1 ? 's' : ''} · semis ${dshort(sem)}${o.generic ? ' · base générique' : ''}</small></span>${ic(op ? 'up' : 'down')}</button>
+    ${op ? `<div class="oi-b"><label class="oi-sem">${ic('sprout')}<span>Date de semis ${campLabel(CURRENT_CAMP)}</span><input class="inp" type="date" value="${sem}" data-ch="obSem" data-k="${k}"></label>
+      <div class="oi-steps">${[...o.steps].map((x, i) => ({ x, i })).sort((a, b) => a.x.off - b.x.off).map(({ x, i }) => { const d = addDays(sem, x.off), past = d < TODAY; return `<div class="oi-s ${x.on ? '' : 'off'}"><button class="oi-ck" data-a="obItkTg" data-k="${k}" data-i="${i}" aria-label="Activer">${x.on ? ic('check') : ''}</button><span class="oi-ic">${ic(IV_ICON[x.type] || 'sprout')}</span><span class="tx" data-a="obItkEd" data-k="${k}" data-i="${i}"><b>${esc(x.label)}</b><small>${dshort(d)}${x.off ? ` · J${x.off > 0 ? '+' : ''}${x.off}` : ' · jour du semis'}${(x.produits || []).length ? ' · ' + esc(x.produits.map(y => obProdName(y.itemId)).filter(Boolean).join(', ')) : ''}${past && x.on ? ' · <em>déjà passée</em>' : ''}</small></span><button class="btn sm icon g" data-a="obItkEd" data-k="${k}" data-i="${i}" aria-label="Modifier">${ic('edit')}</button></div>`; }).join('')}</div>
+      <div class="row mt"><button class="btn sm" data-a="obItkAdd" data-k="${k}">${ic('plus')} Ajouter une étape</button><span class="sp"></span>${!o.generic && obTpl().itk[k] ? `<button class="lnk" data-a="obItkReset" data-k="${k}">Revenir à la base</button>` : ''}</div>
+      ${o.generic ? `<div class="note mt">${ic('info')}<span>Pas d’itinéraire type détaillé pour cette culture : base générique à adapter à vos pratiques.</span></div>` : ''}</div>` : ''}</div>`; }).join('')}
+  <div class="note mt">${ic('calendar')}<span>Les étapes dont la date est déjà passée ne créent pas de tâche. Vous pourrez tout modifier ensuite dans le menu Itinéraires techniques.</span></div>`;
+}
+ACT.obItkOpen = d => { OB.itkOpen = OB.itkOpen === d.k ? '' : d.k; obSave(); obRerender(); };
+ACT.obItkTg = d => { const x = obItkOf(d.k).steps[+d.i]; x.on = !x.on; obSave(); obRerender(); };
+ACT.obItkReset = d => { delete OB.itk[d.k]; obSave(); obRerender(); };
+CH.obSem = el => { if (!el.value) return; const o = obItkOf(el.dataset.k); o.semisType = el.value.slice(5); obSave(); obRerender(); };
+function obStepForm(k, i) {
+  const o = obItkOf(k), x = i != null ? o.steps[i] : null, sem = obSemis(k);
+  openModal({ title: x ? 'Modifier l’étape' : `Nouvelle étape · ${esc(CULTURES[k].nom)}`, body: `<label class="field"><span>Intitulé</span><input class="inp" name="label" required value="${esc(x?.label || '')}" placeholder="Ex. Désherbage de printemps"></label>
+  <div class="field"><span>Type</span><div class="ob-chips">${OB_ITK_TYPES.map(t => `<label class="fchip rad"><input type="radio" name="type" value="${t}" ${(x?.type || 'autre') === t ? 'checked' : ''}><span>${ic(IV_ICON[t] || 'dots')} ${esc(INTER_TYPES[t])}</span></label>`).join('')}</div></div>
+  <label class="field"><span>Date prévue</span><input class="inp" type="date" name="date" value="${addDays(sem, x?.off ?? 30)}" required><small>Semis le ${dfr(sem)} : la date est enregistrée en jours après le semis, pour se décaler avec lui.</small></label>`,
+    foot: `${x ? `<button type="button" class="btn g d" data-a="obItkDel" data-k="${k}" data-i="${i}">${ic('trash')}</button>` : ''}<span class="sp"></span><button class="btn" data-a="closeModal" type="button">Annuler</button><button class="btn p" type="submit" form="mf">${x ? 'Enregistrer' : 'Ajouter'}</button>`,
+    onSubmit: f => { if (!f.label || !f.date) throw new Error('Intitulé et date requis'); const off = daysBetween(sem, f.date); if (x) Object.assign(x, { label: f.label, type: f.type, off }); else o.steps.push({ id: uid('stp'), type: f.type, label: f.label, off, produits: [], materiels: [], hHa: f.type === 'recolte' ? 0.4 : 0.15, on: true }); obSave(); setTimeout(obRerender, 0); } });
+}
+ACT.obItkEd = d => obStepForm(d.k, +d.i);
+ACT.obItkAdd = d => obStepForm(d.k, null);
+ACT.obItkDel = d => { obItkOf(d.k).steps.splice(+d.i, 1); obSave(); closeModal(); obRerender(); };

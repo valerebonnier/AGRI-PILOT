@@ -1131,3 +1131,26 @@ details.more summary{cursor:pointer;font-weight:700;font-size:13px;color:var(--p
 .ps-i .tx{display:flex;flex-direction:column;min-width:0}.ps-i b{font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ps-i small{font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ps-e{font-size:12.5px;color:var(--muted);padding:6px 10px 10px}
 @media (max-width:900px){.psearch{flex-basis:100%;max-width:none;order:3}}
+/* itinéraires (configuration) */
+.oi{background:var(--surface);border:1px solid var(--border);border-left:5px solid var(--c);border-radius:16px;margin-bottom:8px;overflow:hidden}
+.oi-h{display:flex;align-items:center;gap:10px;width:100%;padding:13px 14px;border:0;background:none;font:inherit;color:var(--text);text-align:left;cursor:pointer}.oi-h .sw{width:10px;height:10px;border-radius:3px;background:var(--c);flex:none}.oi-h .tx{flex:1;min-width:0;display:flex;flex-direction:column}.oi-h b{font-size:15px}.oi-h small{font-size:12px;color:var(--muted)}
+.oi-b{padding:0 14px 14px}
+.oi-sem{display:flex;align-items:center;gap:8px;background:color-mix(in srgb,var(--c) 10%,var(--surface));border-radius:12px;padding:8px 10px;margin-bottom:8px;font-size:13px;font-weight:650}.oi-sem svg{color:var(--c);flex:none}.oi-sem span{flex:1}.oi-sem input{width:auto;height:38px}
+.oi-steps{display:flex;flex-direction:column}
+.oi-s{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)}.oi-s:last-child{border-bottom:0}
+.oi-ck{width:26px;height:26px;border-radius:8px;border:2px solid var(--c);background:var(--c);color:#fff;display:grid;place-items:center;flex:none;cursor:pointer;padding:0}.oi-ck svg{width:15px;height:15px}
+.oi-s.off .oi-ck{background:none;border-color:var(--line,var(--border))}.oi-s.off .tx,.oi-s.off .oi-ic{opacity:.45}.oi-s.off .tx b{text-decoration:line-through}
+.oi-ic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;flex:none;background:var(--surface-3);color:var(--text-2)}.oi-ic svg{width:15px;height:15px}
+.oi-s .tx{flex:1;min-width:0;display:flex;flex-direction:column;cursor:pointer}.oi-s .tx b{font-size:13.5px}.oi-s .tx small{font-size:11.5px;color:var(--muted)}.oi-s em{font-style:normal;color:var(--warn);font-weight:700}
+.fchip.rad{position:relative;cursor:pointer}.fchip.rad input{position:absolute;opacity:0}.fchip.rad span{display:inline-flex;align-items:center;gap:5px}.fchip.rad span svg{width:14px;height:14px}.fchip.rad:has(input:checked){background:var(--primary);color:#fff;border-color:var(--primary)}
+/* fiche parcelle : culture + Google Maps */
+.pcard[data-a]{cursor:pointer}
+.pc-change{text-align:right;margin-top:4px}.pc-change .lnk{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:700;background:none;border:0;color:var(--primary);cursor:pointer}.pc-change svg{width:14px;height:14px}
+.gm-bar{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.gm{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:14px;background:var(--surface);font:inherit;color:var(--text);cursor:pointer;text-align:left}.gm>svg{width:30px;height:30px;padding:6px;border-radius:9px;background:#E8F0FE;color:#1A73E8;flex:none}.gm span{display:flex;flex-direction:column;min-width:0}.gm b{font-size:13.5px}.gm small{font-size:11px;color:var(--muted)}
+.gm-off{display:flex;align-items:center;gap:8px;margin-top:10px;padding:10px 12px;border:1px dashed var(--border);border-radius:14px;font-size:12px;color:var(--muted)}.gm-off>svg{flex:none;width:18px;height:18px}.gm-off span{flex:1}
+.pc-camps{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-bottom:10px}.pc-camps button{border:1px solid var(--border);background:var(--surface);border-radius:12px;padding:7px 2px;display:flex;flex-direction:column;align-items:center;font:inherit;cursor:pointer;color:var(--text);min-width:0}.pc-camps b{font-size:13.5px}.pc-camps small{font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.pc-camps button.on{background:var(--c-cult);border-color:var(--c-cult);color:#fff}.pc-camps button.on small{color:rgba(255,255,255,.85)}
+.pc-g{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px}
+.pc-t{display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:var(--surface);font:inherit;font-weight:650;font-size:13px;color:var(--text);cursor:pointer;text-align:left}.pc-t .sw{width:10px;height:10px;border-radius:3px;background:var(--c);flex:none}.pc-t.on{border-color:var(--c);background:color-mix(in srgb,var(--c) 14%,var(--surface));box-shadow:inset 0 0 0 1px var(--c)}
+.btn.on{background:var(--surface-3)}

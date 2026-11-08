@@ -610,7 +610,9 @@ DRAWERS.parcelle = id => {
     const same = c ? activeParcels().filter(x => curCult(x)?.culture === c.culture) : [];
     const next = S.interventions.filter(i => i.parcelleId === p.id && i.statut === 'planifiee').sort((a, b) => a.date.localeCompare(b.date)).slice(0, 4);
     const last = S.interventions.filter(i => i.parcelleId === p.id && i.statut === 'realisee').sort((a, b) => b.date.localeCompare(a.date)).slice(0, 4);
-    body += `<div class="pcard" style="--c:${col}"><div class="row"><span class="sw"></span><div style="flex:1;min-width:0"><b>${esc(CULTURES[c?.culture]?.nom || 'Non assolée')}${c?.variete ? ` · ${esc(c.variete)}` : ''}</b><span>${nf(p.surface, 2)} ha${p.commune ? ' · ' + esc(p.commune) : ''}${c?.semis ? ` · semis ${c.semisFait ? 'fait le' : 'prévu le'} ${dshort(c.semis)}` : ''}</span>${(() => { const l = lastOp(p); return l ? `<span>Dernière opération : <b style="display:inline;font-size:inherit">${esc(l.label)}</b> · ${dshort(l.date)}</span>` : ''; })()}</div>${statutParc(p)}</div></div>
+    body += `${!c && !p.parentId ? `<button class="btn p mb" style="width:100%" data-a="parcCult" data-id="${p.id}">${ic('wheat')} Choisir la culture ${campLabel(CURRENT_CAMP)}</button>` : ''}<div class="pcard" style="--c:${col}" ${p.parentId ? '' : `data-a="parcCult" data-id="${p.id}"`}><div class="row"><span class="sw"></span><div style="flex:1;min-width:0"><b>${esc(CULTURES[c?.culture]?.nom || 'Non assolée')}${c?.variete ? ` · ${esc(c.variete)}` : ''}</b><span>${nf(p.surface, 2)} ha${p.commune ? ' · ' + esc(p.commune) : ''}${c?.semis ? ` · semis ${c.semisFait ? 'fait le' : 'prévu le'} ${dshort(c.semis)}` : ''}</span>${(() => { const l = lastOp(p); return l ? `<span>Dernière opération : <b style="display:inline;font-size:inherit">${esc(l.label)}</b> · ${dshort(l.date)}</span>` : ''; })()}</div>${statutParc(p)}</div></div>
+    ${p.parentId ? '' : `<div class="pc-change"><button class="lnk" data-a="parcCult" data-id="${p.id}">${ic('edit')} Changer la culture ou voir les autres années</button></div>`}
+    ${gmapBar(p)}
     <div class="sec-h" style="margin-top:16px"><h3>Saisir une opération</h3></div>
     <div class="op-grid">${OP_TYPES.map(([k, l]) => `<button class="op" data-a="quickIv" data-pid="${p.id}" data-type="${k}"><span class="ti">${ic(IV_ICON[k])}</span>${l}</button>`).join('')}</div>
     ${same.length > 1 ? `<button class="btn mt" style="width:100%;justify-content:flex-start" data-a="quickIv" data-pids="${same.map(x => x.id).join(',')}">${ic('layers')} Même opération sur tout le ${esc(CULTURES[c.culture].nom.toLowerCase())} · ${same.length} parcelles · ${nf(sum(same, x => x.surface), 1)} ha</button>` : ''}
@@ -624,7 +626,7 @@ DRAWERS.parcelle = id => {
     ${p.contourProvisoire ? `<div class="note warn mt">${ic('map')}<span>Contour provisoire, non placé sur la carte. Touchez « Dessiner le contour » puis placez les sommets sur la vue satellite.</span></div>` : ''}
     <div class="row wrap mt"><button class="btn" data-a="editParc" data-id="${p.id}">${ic('edit')} Modifier</button><button class="btn" data-a="editContour" data-id="${p.id}">${ic('map')} ${p.contourProvisoire ? 'Dessiner le contour' : 'Modifier le contour'}</button>${c ? `<button class="btn" data-a="genItk" data-id="${p.id}">${ic('sprout')} Générer l'ITK</button>` : ''}<span class="sp"></span>${p.parentId ? '' : `<button class="btn g" data-a="terreOut" data-id="${p.id}">${ic('minus')} Retirer des terres</button>`}<button class="btn d g" data-a="delParc" data-id="${p.id}">${ic('trash')}</button></div>`;
   } else if (t === 'historique') {
-    body += `<div class="card"><div class="tbl-wrap"><table class="t"><thead><tr><th>Campagne</th><th>Culture</th><th>Variété</th><th class="n">Rdt prév.</th><th class="n">Rdt réel</th><th class="n">Production</th></tr></thead><tbody>${camps.map(cp => { const r = p.cultures[cp]; return `<tr><td class="b">${campLabel(cp)}</td><td>${cultBadge(r.culture)}</td><td>${esc(r.variete || '—')}</td><td class="n">${r.rdtPrev ? nfx(r.rdtPrev, 1) : '—'}</td><td class="n">${r.rdtReel ? nfx(r.rdtReel, 2) : '—'}</td><td class="n">${r.rdtReel && r.culture !== 'prairie' ? nf(r.rdtReel * p.surface, 1) + ' t' : '—'}</td></tr>`; }).join('')}</tbody></table></div></div>
+    body += `${p.parentId ? '' : `<button class="btn mb" style="width:100%" data-a="parcCult" data-id="${p.id}" data-camp="${CURRENT_CAMP - 1}">${ic('edit')} Renseigner ou corriger une culture (années passées ou à venir)</button>`}<div class="card"><div class="tbl-wrap"><table class="t"><thead><tr><th>Campagne</th><th>Culture</th><th>Variété</th><th class="n">Rdt prév.</th><th class="n">Rdt réel</th><th class="n">Production</th></tr></thead><tbody>${camps.map(cp => { const r = p.cultures[cp]; return `<tr ${p.parentId ? '' : `data-a="parcCult" data-id="${p.id}" data-camp="${cp}" style="cursor:pointer"`}><td class="b">${campLabel(cp)}</td><td>${cultBadge(r.culture)}</td><td>${esc(r.variete || '—')}</td><td class="n">${r.rdtPrev ? nfx(r.rdtPrev, 1) : '—'}</td><td class="n">${r.rdtReel ? nfx(r.rdtReel, 2) : '—'}</td><td class="n">${r.rdtReel && r.culture !== 'prairie' ? nf(r.rdtReel * p.surface, 1) + ' t' : '—'}</td></tr>`; }).join('')}</tbody></table></div></div>
     <div class="formula">Rendements en t/ha. Les campagnes antérieures à 2025 sont un historique saisi (démo), sans détail d'interventions.</div>`;
   } else if (t === 'interventions') {
     const cp = UI.tabs.dpCamp || CURRENT_CAMP;
@@ -645,6 +647,7 @@ function zonesDrawer(p) {
   const zs = zonesOf(p), tot = sum(zs, z => z.surface);
   const body = `<div class="card pad mb"><div class="row"><div class="ic" style="width:42px;height:42px;border-radius:12px;display:grid;place-items:center;background:var(--surface-3)">${ic('layers')}</div><div style="flex:1;min-width:0"><b>${zs.length} cultures dans ce champ</b><div class="small muted">Campagne ${campLabel(CURRENT_CAMP)} · ${nf(tot, 2)} ha répartis sur ${nf(p.surface, 2)} ha${p.commune ? ' · ' + esc(p.commune) : ''}</div></div></div>
     <div class="zbar mt">${zs.map(z => `<i style="flex:${z.surface};background:${CULTURES[curCult(z)?.culture]?.color || '#999'}" title="${esc(CULTURES[curCult(z)?.culture]?.nom || '')}"></i>`).join('')}</div></div>
+    ${gmapBar(p)}
     <div class="note info mb">${ic('info')}<span>Chaque zone se gère comme une parcelle : opérations, stade, itinéraire, coûts. Touchez une zone pour l’ouvrir.</span></div>
     <div class="card">${zs.map(zoneLi).join('')}</div>
     <div class="row wrap mt"><button class="btn" data-a="divParc" data-id="${p.id}">${ic('edit')} Modifier la répartition</button><button class="btn" data-a="quickIv" data-pids="${zs.map(z => z.id).join(',')}">${ic('plus')} Opération sur tout le champ</button><span class="sp"></span><button class="btn g" data-a="joinParc" data-id="${p.id}" ${zs.some(zoneHasDone) ? 'disabled title="Des opérations ont été réalisées sur les zones"' : ''}>${ic('undo')} Réunir</button></div>
@@ -1889,15 +1892,46 @@ ACT.asEdit = (d, el, e) => { if (e?.target.closest('[data-a="asPlace"]')) return
 ACT.asDelPlan = d => { delete asPlan(asCamp())[d.c]; closeModal(); commit('Objectif retiré'); };
 ACT.asPlace = d => { UI.tabs.as = 'parcelles'; UI.f.asNone = '1'; render(); toast(`Choisissez « ${CULTURES[d.c]?.nom} » sur les parcelles non assolées`); };
 ACT.asCopy = () => { const camp = asCamp(), prev = camp - 1, plan = asPlan(camp), src = asRows(prev); if (!src.length) { toast(`Rien à reprendre pour ${campLabel(prev)}`, 'warn'); return; } openModal({ title: `Reprendre les surfaces de ${campLabel(prev)}`, body: `<p>Les objectifs ${campLabel(camp)} seront pré-remplis avec les surfaces par culture de ${campLabel(prev)} (à ajuster ensuite pour la rotation). Les parcelles ne sont pas modifiées.</p><div class="card">${src.map(r => `<div class="li"><span class="sw" style="width:10px;height:10px;border-radius:3px;background:${r.color}"></span><div class="tx"><b>${esc(r.nom)}</b></div><b>${nf(r.obj ?? r.aff, 1)} ha</b></div>`).join('')}</div>`, submit: 'Reprendre', onSubmit: () => { src.forEach(r => { if (plan[r.key] == null) plan[r.key] = r2(r.obj ?? r.aff, 2); }); commit('Plan pré-rempli'); } }); };
-CH.asSet = el => {
-  const camp = asCamp(), p = byId('parcelles', el.dataset.id), v = el.value, old = p.cultures[camp];
+/** Change la culture d'une parcelle pour une campagne. Renvoie un message d'erreur, ou '' si c'est fait. */
+function setParcCulture(p, camp, v, extra = {}) {
+  const old = p.cultures[camp];
+  if (zonesOf(p, camp).length) return `${p.nom} est divisé en plusieurs cultures pour ${campLabel(camp)} : modifiez la répartition des zones`;
   const done = S.interventions.filter(i => i.parcelleId === p.id && i.campagne === camp && i.statut === 'realisee');
-  if (done.length && old && old.culture !== v) { toast(`Impossible : ${done.length} opération(s) déjà réalisée(s) en ${CULTURES[old.culture]?.nom} sur ${p.nom} cette campagne`, 'warn'); render(); return; }
-  S.interventions = S.interventions.filter(i => !(i.parcelleId === p.id && i.campagne === camp && i.statut === 'planifiee' && !i.custom));
+  if (done.length && old && old.culture !== v) return `Impossible : ${done.length} opération(s) déjà réalisée(s) en ${CULTURES[old.culture]?.nom} sur ${p.nom} pour ${campLabel(camp)}`;
+  if (old?.culture !== v) S.interventions = S.interventions.filter(i => !(i.parcelleId === p.id && i.campagne === camp && i.statut === 'planifiee' && !i.custom));
   if (!v) delete p.cultures[camp];
-  else { p.cultures[camp] = newCultRec(v, camp, old?.culture === v ? old : {}); if (camp === CURRENT_CAMP) syncItkParcel(p); }
+  else { p.cultures[camp] = { ...newCultRec(v, camp, old?.culture === v ? old : {}), ...extra }; if (camp === CURRENT_CAMP && old?.culture !== v) syncItkParcel(p); }
+  return '';
+}
+CH.asSet = el => {
+  const camp = asCamp(), p = byId('parcelles', el.dataset.id), v = el.value;
+  const err = setParcCulture(p, camp, v); if (err) { toast(err, 'warn'); render(); return; }
   commit(v ? `${p.nom} → ${CULTURES[v].nom}` : `${p.nom} non assolée`);
 };
+/* ---- Choisir l'assolement depuis la fiche parcelle (campagne en cours, passées ou à venir) ---- */
+let PC = null;
+ACT.parcCult = d => { const p = byId('parcelles', d.id); PC = { id: p.id, camp: +(d.camp || CURRENT_CAMP) }; PC.cult = p.cultures[PC.camp]?.culture || ''; PC.var = p.cultures[PC.camp]?.variete || ''; openModal({ title: `Culture · ${esc(p.nom)}`, wide: true, body: '<div id="pcB"></div>', submit: 'Enregistrer', onMount: renderPC, onSubmit: submitPC }); };
+function renderPC() {
+  const p = byId('parcelles', PC.id), camps = [CURRENT_CAMP - 3, CURRENT_CAMP - 2, CURRENT_CAMP - 1, CURRENT_CAMP, CURRENT_CAMP + 1, CURRENT_CAMP + 2];
+  const farm = [...new Set([...activeParcels().map(x => curCult(x)?.culture), ...Object.keys(asPlan(PC.camp))].filter(k => CULTURES[k]))];
+  const others = Object.keys(CULTURES).filter(k => !farm.includes(k)), zs = zonesOf(p, PC.camp), done = S.interventions.filter(i => i.parcelleId === p.id && i.campagne === PC.camp && i.statut === 'realisee').length;
+  const tile = k => `<button type="button" class="pc-t ${PC.cult === k ? 'on' : ''}" style="--c:${CULTURES[k].color}" data-a="pcPick" data-k="${k}"><span class="sw"></span>${esc(CULTURES[k].nom)}</button>`;
+  document.getElementById('pcB').innerHTML = `<div class="pc-camps">${camps.map(c => `<button type="button" class="${c === PC.camp ? 'on' : ''}" data-a="pcCamp" data-c="${c}"><b>${c}</b><small>${CULTURES[p.cultures[c]?.culture]?.nom || (zonesOf(p, c).length ? 'Plusieurs' : '—')}</small></button>`).join('')}</div>
+  <div class="small muted mb">Campagne ${campLabel(PC.camp)} ${PC.camp < CURRENT_CAMP ? '(passée : pour l’historique et les rotations)' : PC.camp > CURRENT_CAMP ? '(à venir : prépare l’assolement)' : '(en cours : met à jour les travaux prévus)'}${p.cultures[PC.camp - 1] ? ` · précédent : <b>${esc(CULTURES[p.cultures[PC.camp - 1].culture]?.nom)}</b>` : ''}</div>
+  ${zs.length ? `<div class="note warn">${ic('layers')}<span>Ce champ est divisé en ${zs.length} cultures pour cette campagne. Modifiez la répartition depuis la fiche du champ.</span></div>` : `
+  ${done ? `<div class="note info mb">${ic('lock')}<span>${done} opération(s) réalisée(s) cette campagne : la culture ne peut plus être changée.</span></div>` : ''}
+  ${farm.length ? `<div class="pc-g">${farm.map(tile).join('')}</div>` : ''}<details class="mt" ${farm.includes(PC.cult) || !PC.cult ? '' : 'open'}><summary class="small b">Autres cultures</summary><div class="pc-g mt">${others.map(tile).join('')}</div></details>
+  <div class="row mt" style="gap:8px"><button type="button" class="btn sm g ${!PC.cult ? 'on' : ''}" data-a="pcPick" data-k="">${ic('x')} Non assolée</button><span class="sp"></span></div>
+  <label class="field mt"><span>Variété (facultatif)</span><input class="inp" id="pcVar" value="${esc(PC.var)}" oninput="PC.var=this.value"></label>`}`;
+}
+ACT.pcCamp = d => { const p = byId('parcelles', PC.id); PC.camp = +d.c; PC.cult = p.cultures[PC.camp]?.culture || ''; PC.var = p.cultures[PC.camp]?.variete || ''; renderPC(); };
+ACT.pcPick = d => { PC.cult = d.k; renderPC(); };
+function submitPC() { const p = byId('parcelles', PC.id); if (zonesOf(p, PC.camp).length) return; const err = setParcCulture(p, PC.camp, PC.cult, PC.cult ? { variete: PC.var || '' } : {}); if (err) throw new Error(err); commit(PC.cult ? `${p.nom} · ${campLabel(PC.camp)} → ${CULTURES[PC.cult].nom}` : `${p.nom} non assolée en ${campLabel(PC.camp)}`); }
+/* ---- Google Maps ---- */
+function parcGeo(p) { const g = p.parentId ? byId('parcelles', p.parentId) : p; if (!g || g.contourProvisoire || !(g.coords?.length >= 3)) return null; const c = centroid(g.coords); return [r2(c[0], 6), r2(c[1], 6)]; }
+ACT.gmapGo = d => { const c = parcGeo(byId('parcelles', d.id)); if (!c) return; window.open(`https://www.google.com/maps/dir/?api=1&destination=${c[0]},${c[1]}`, '_blank', 'noopener'); };
+ACT.gmapShare = async d => { const p = byId('parcelles', d.id), c = parcGeo(p); if (!c) return; const url = `https://www.google.com/maps/search/?api=1&query=${c[0]},${c[1]}`; const title = `${p.nom}${S.exploitation?.nom ? ' — ' + S.exploitation.nom : ''}`; if (navigator.share) { try { await navigator.share({ title, text: `${title} (${nf(p.surface, 2)} ha)`, url }); return; } catch (e) { if (e?.name === 'AbortError') return; } } copyText(url, 'Lien Google Maps copié'); };
+const gmapBar = p => { const c = parcGeo(p); return c ? `<div class="gm-bar"><button class="gm" data-a="gmapGo" data-id="${p.id}">${ic('pin')}<span><b>S’y rendre</b><small>Itinéraire Google Maps</small></span></button><button class="gm" data-a="gmapShare" data-id="${p.id}">${ic('upload')}<span><b>Partager</b><small>Lien Google Maps</small></span></button></div>` : `<div class="gm-off">${ic('pin')}<span>Dessinez le contour de la parcelle pour obtenir l’itinéraire et le lien Google Maps.</span>${p.parentId ? '' : `<button class="btn sm" data-a="editContour" data-id="${p.id}">Dessiner</button>`}</div>`; };
 /* ---------- mouvements de terres ---------- */
 let TER = null;
 function natPick(list, v) { return `<div class="nat-pick">${list.map(([k, l, i]) => `<button type="button" class="${v === k ? 'on' : ''}" data-a="terNat" data-v="${k}">${ic(i)}<span>${l}</span></button>`).join('')}</div>`; }
