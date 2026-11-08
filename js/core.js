@@ -59,7 +59,7 @@ const INTER_TYPES = {
 };
 const STOCK_CATS = {
   production: 'Productions', semences: 'Semences', engrais: 'Engrais',
-  phyto: 'Produits phytosanitaires', amendements: 'Amendements', carburants: 'Carburants',
+  phyto: 'Produits phytosanitaires', amendements: 'Amendements', carburants: 'Carburants', autre: 'Autres',
 };
 const MOVE_TYPES = { entree: 'Entrée', sortie: 'Sortie', transfert: 'Transfert', perte: 'Perte', ajustement: 'Ajustement' };
 const CHARGE_CATS = {

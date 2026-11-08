@@ -49,7 +49,8 @@ function initLeaflet() {
   LMAP.on('moveend', () => { UI.mapView = { c: LMAP.getCenter(), z: LMAP.getZoom() }; });
   LMAP.on('click', e => { if (EDIT && EDIT.mode === 'draw') { EDIT.pts.push([r2(e.latlng.lat, 7), r2(e.latlng.lng, 7)]); EDIT.sel = EDIT.pts.length - 1; renderEdit(); } });
   if (EDIT) renderEdit();
-  setTimeout(() => LMAP && LMAP.invalidateSize(), 60);
+  setTimeout(() => LMAP && LMAP.invalidateSize(), 60); setTimeout(() => LMAP && LMAP.invalidateSize(), 400);
+  try { if (window.ResizeObserver) { const ro = new ResizeObserver(() => { if (LMAP) LMAP.invalidateSize(); }); ro.observe(el); LMAP.on('unload', () => ro.disconnect()); } } catch (e) { }
 }
 AFTER.push(() => { if (document.getElementById('lmap')) initLeaflet(); else if (LMAP) { try { LMAP.remove(); } catch (e) { } LMAP = null; } });
 
