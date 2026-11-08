@@ -2,7 +2,7 @@
 /* =====================================================================
    AGRI PILOT — Interface : icônes, formats, graphiques, structure, routeur
    ===================================================================== */
-const APP_VERSION = '2026.11.08-v18';
+const APP_VERSION = '2026.11.08-v19';
 const ICONS = {
   home: '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>',
   farm: '<path d="M3 21V10l9-6 9 6v11M9 21v-6h6v6M2 21h20"/>',
@@ -217,7 +217,7 @@ function shell() {
   const byCat = c => todo.filter(t => t.cat === c && t.urgence !== 'ok').length;
   const cnt = { taches: urgent, interventions: byCat('cultures'), stocks: byCat('stocks'), materiel: byCat('materiel'), ventes: byCat('ventes'), pac: byCat('admin'), documents: byCat('documents') };
   const r = ROUTES.find(x => x[0] === UI.route) || (UI.route === 'plus' ? ['plus', 'Menu'] : ROUTES[0]);
-  UI._pa = []; const content = (VIEWS[UI.route] || VIEWS.dashboard)(); const bar = paBar();
+  UI._pa = []; const content = typeof hasRoute === 'function' && !hasRoute(UI.route) ? lockedView(UI.route) : (VIEWS[UI.route] || VIEWS.dashboard)(); const bar = paBar();
   const isTab = ['dashboard', 'parcellaire', 'stocks', 'taches', 'plus'].includes(UI.route);
   const stockAlerts = todo.filter(t => t.kind === 'stock').length;
   return `
