@@ -691,23 +691,65 @@ function submitQF() {
 }
 
 /* =========================== STOCKS =========================== */
-VIEWS.stocks = () => {
-  const t = tab('stk', 'tout'); const st = stockTotals();
-  const low = S.stock.filter(i => i.cat !== 'production' && i.seuil > 0 && i.qte <= i.seuil);
-  const mv30 = S.mouvements.filter(m => daysBetween(m.date, TODAY) <= 30 && m.date <= TODAY).length;
-  const head = `${demoBar('Stocks de démonstration : les quantités résultent du rejeu des achats, interventions, récoltes et ventes fictifs.')}
-  <div class="grid g-kpi mb">${kpi('box', 'Valeur des intrants', eur(st.intrants), 'au prix moyen pondéré')}${kpi('wheat', 'Récoltes en stock', eur(st.production), `<span class="badge est">valeur théorique</span> au cours de référence`)}${kpi('alert', 'Sous le seuil d’alerte', low.length, low.slice(0, 2).map(i => esc(i.nom)).join(', ') || 'Aucun', '', low.length ? 'warn' : '')}${kpi('move', 'Mouvements (30 j)', mv30, `${S.mouvements.length} au total`)}</div>
-  ${tabsBar('stk', [['tout', 'Tous'], ...Object.entries(STOCK_CATS), ['mouvements', 'Mouvements'], ['inventaire', 'Inventaire']], t)}`;
-  if (t === 'mouvements') return head + stockMovesView();
-  if (t === 'inventaire') return head + inventaireView();
-  const q = norm(UI.q.stk || '');
-  const items = S.stock.filter(i => (t === 'tout' || i.cat === t) && (t === 'production' || i.qte > 0.0001 || i.cat !== 'production') && (!q || norm(i.nom + i.emplacement + i.lot).includes(q)));
-  return head + `<div class="row wrap mb toolbar"><div class="search-in" style="width:min(280px,100%)">${ic('search')}<input class="inp" placeholder="Rechercher un article, un lot…" data-in="stkQ" value="${esc(UI.q.stk || '')}"></div><span class="sp"></span>${pa([{ a: 'newItem', i: 'plus', l: 'Article', more: true }, { a: 'stockMove', i: 'move', l: 'Mouvement' }, { a: 'purchase', i: 'cart', l: 'Entrée / achat', primary: true }])}</div>
-  ${`<div class="card only-m">${mWrap(items.map(mStock), 'Aucun article')}</div>`}<div class="card only-d"><div class="tbl-wrap"><table class="t"><thead><tr><th>Désignation</th><th class="hide-m">Catégorie</th><th class="hide-m">Emplacement</th><th class="n">Quantité</th><th class="n hide-m">Prix moyen</th><th class="n">Valeur</th><th>État</th></tr></thead><tbody>
-  ${items.map(i => { const v = stockValue(i); const ratio = i.seuil ? i.qte / (i.seuil * 2) : 1; const lvl = i.qte <= 0 ? 'danger' : i.seuil && i.qte <= i.seuil ? 'warn' : ''; return `<tr data-a="openStock" data-id="${i.id}"><td><div class="cell-main">${esc(i.nom)}</div><div class="cell-sub">${i.lot ? 'Lot ' + esc(i.lot) + ' · ' : ''}${esc(i.fournisseur || '')}</div></td><td class="hide-m">${STOCK_CATS[i.cat]}</td><td class="hide-m">${esc(i.emplacement)}</td><td class="n b">${qty(i.qte, i.unite)}</td><td class="n hide-m">${i.cat === 'production' ? (refPrice(i.culture) != null ? `${eur(refPrice(i.culture))}/t <span class="badge est">cours</span>` : '—') : `${eur(i.pmp, i.pmp < 10 ? 3 : 2)}/${i.unite}`}</td><td class="n">${v == null ? '—' : eur(v)}</td><td style="min-width:110px">${i.cat === 'production' ? '<span class="badge">Récolte</span>' : i.seuil ? `<div class="bar ${lvl}"><i style="width:${Math.min(100, ratio * 100)}%"></i></div><div class="cell-sub">seuil ${nfx(i.seuil, 0)} ${i.unite}</div>` : lvl === 'danger' ? '<span class="badge danger">Épuisé</span>' : '<span class="muted small">—</span>'}</td></tr>`; }).join('') || '<tr><td colspan="7" class="empty">Aucun article</td></tr>'}
-  </tbody><tfoot><tr><td colspan="3" class="hide-m">Total</td><td class="hide-d">Total</td><td class="hide-m"></td><td class="n">${eur(sum(items, i => stockValue(i) || 0))}</td><td colspan="2"></td></tr></tfoot></table></div></div>`;
+/* =========================== STOCKS (visuel) =========================== */
+const STOCK_META = {
+  production: { label: 'Récoltes', icon: 'wheat', color: '#C9962E' }, semences: { label: 'Semences', icon: 'sprout', color: '#2E9A5B' },
+  engrais: { label: 'Engrais', icon: 'flask', color: '#2F7FD1' }, phyto: { label: 'Phytos', icon: 'shield', color: '#D9487A' },
+  amendements: { label: 'Amendements', icon: 'layers', color: '#94664A' }, carburants: { label: 'Carburant', icon: 'fuel', color: '#5B6B7A' },
 };
-IN.stkQ = el => { UI.q.stk = el.value; const pos = el.selectionStart; render(); const i = document.querySelector('[data-in=stkQ]'); i.focus(); i.setSelectionRange(pos, pos); };
+const QTY_PRESETS = { kg: [100, 500, 1000, 5000], L: [5, 20, 100, 1000], t: [1, 5, 10, 25], dose: [1, 5, 10, 20], u: [1, 5, 10, 50] };
+/** Niveau de remplissage : par rapport à la capacité si connue, sinon à 3 × le seuil d'alerte. */
+function stockLevel(i) {
+  if (i.cat === 'production') return null;
+  const ref = i.capacite > 0 ? i.capacite : i.seuil > 0 ? i.seuil * 3 : null;
+  const state = i.qte <= 0 ? 'danger' : i.seuil > 0 && i.qte <= i.seuil ? 'warn' : 'ok';
+  return { ratio: ref ? Math.max(0, Math.min(1, i.qte / ref)) : null, seuilPos: ref && i.seuil ? Math.min(1, i.seuil / ref) : null, state };
+}
+const gauge = (i, big) => { const l = stockLevel(i); if (!l || l.ratio == null) return ''; return `<div class="gauge ${big ? 'big' : ''} ${l.state}"><i style="width:${l.ratio * 100}%"></i>${l.seuilPos ? `<b style="left:${l.seuilPos * 100}%" title="Seuil d'alerte"></b>` : ''}</div>`; };
+const stIcon = i => STOCK_META[i.cat]?.icon || 'box';
+function harvestInfo(i) { const inQ = sum(S.mouvements.filter(m => m.itemId === i.id && m.type === 'entree'), m => m.qte); const sold = sum(S.ventes.filter(v => v.itemId === i.id), v => v.qte); return { inQ, sold }; }
+
+VIEWS.stocks = () => {
+  const t = tab('stk', 'apercu');
+  const nav = `<div class="fchips">${[['apercu', 'Vue d’ensemble', 'grid'], ...Object.entries(STOCK_META).map(([k, m]) => [k, m.label, m.icon]), ['mouvements', 'Mouvements', 'move'], ['inventaire', 'Inventaire', 'clipboard']].map(([k, l, i]) => `<button class="fchip ${t === k ? 'on' : ''}" style="--c:${STOCK_META[k]?.color || 'var(--text)'}" data-a="tab" data-k="stk" data-v="${k}">${ic(i)} ${l}</button>`).join('')}</div>`;
+  const pas = [{ a: 'newItem', i: 'plus', l: 'Nouveau produit', more: true }, { a: 'stockOutPick', i: 'minus', l: 'Sortie' }, { a: 'purchase', i: 'plus', l: 'Entrée', primary: true }];
+  let body;
+  if (t === 'apercu') body = stockOverview();
+  else if (t === 'mouvements') body = stockMovesView();
+  else if (t === 'inventaire') body = inventaireView();
+  else body = stockCategory(t);
+  return `${demoBar('Stocks de démonstration : les quantités résultent du rejeu des achats, interventions, récoltes et ventes fictifs.')}${nav}<div class="mt">${body}</div>${pa(pas).replace('class="only-d row"', 'class="only-d row" style="margin-top:16px;justify-content:flex-end"')}`;
+};
+function stockOverview() {
+  const st = stockTotals();
+  const low = S.stock.filter(i => i.cat !== 'production' && i.seuil > 0 && i.qte <= i.seuil).sort((a, b) => a.qte / a.seuil - b.qte / b.seuil);
+  const crops = S.stock.filter(i => i.cat === 'production' && i.qte > 0.001).sort((a, b) => b.campagne - a.campagne || b.qte - a.qte);
+  const tonnes = sum(crops, i => i.qte);
+  return `<div class="st-hero"><div><span>Valeur des intrants</span><b>${eur(st.intrants)}</b><small>au prix d’achat moyen</small></div><div><span>Récoltes en stock</span><b>${nf(tonnes, 1)} t</b><small>≈ ${keur(st.production)} au cours de référence</small></div></div>
+  ${low.length ? `<div class="sec-h"><h3>${ic('alert')} À réapprovisionner</h3><span class="n-pill">${low.length}</span></div><div class="hscroll">${low.map(i => `<div class="st-alert" style="--c:${STOCK_META[i.cat].color}" data-a="openStock" data-id="${i.id}"><div class="row"><span class="st-ic">${ic(stIcon(i))}</span><b>${esc(i.nom)}</b></div><div class="q ${i.qte <= 0 ? 'danger' : 'warn'}">${qty(i.qte, i.unite)}</div><small>seuil ${qty(i.seuil, i.unite)}</small>${gauge(i)}<button class="btn sm p" data-a="stockIn" data-id="${i.id}">${ic('plus')} Entrée</button></div>`).join('')}</div>` : `<div class="note mt">${ic('check')}<span>Aucun produit sous son seuil d’alerte.</span></div>`}
+  <div class="sec-h"><h3>Par catégorie</h3></div>
+  <div class="st-cats">${Object.entries(STOCK_META).map(([k, m]) => { const items = S.stock.filter(i => i.cat === k && (k !== 'production' || i.qte > 0.001)); const val = sum(items, i => stockValue(i) || 0); const nLow = items.filter(i => stockLevel(i)?.state && stockLevel(i).state !== 'ok').length; const sub = k === 'production' ? `${nf(sum(items, i => i.qte), 1)} t` : k === 'carburants' && items[0] ? qty(sum(items, i => i.qte), items[0].unite) : `${items.filter(i => i.qte > 0).length} produit${items.filter(i => i.qte > 0).length > 1 ? 's' : ''} en stock`; return `<button class="st-cat" style="--c:${m.color}" data-a="tab" data-k="stk" data-v="${k}"><span class="st-ic">${ic(m.icon)}</span>${nLow ? `<span class="st-badge">${nLow}</span>` : ''}<b>${m.label}</b><span>${sub}</span><em>${keur(val)}${k === 'production' ? ' (théo.)' : ''}</em></button>`; }).join('')}</div>
+  ${crops.length ? `<div class="sec-h"><h3>Récoltes</h3><span class="sp"></span><button class="lnk" data-a="tab" data-k="stk" data-v="production">Tout ${ic('chevR')}</button></div><div class="hscroll">${crops.slice(0, 8).map(siloCard).join('')}</div>` : ''}`;
+}
+function siloCard(i) {
+  const { inQ, sold } = harvestInfo(i); const col = CULTURES[i.culture]?.color || '#C9962E'; const v = stockValue(i);
+  const pctSold = inQ ? Math.min(100, sold / inQ * 100) : 0;
+  return `<div class="silo" style="--c:${col}" data-a="openStock" data-id="${i.id}"><div class="silo-top"><span class="sw"></span><b>${esc(CULTURES[i.culture]?.nom || i.nom)}</b><small>récolte ${i.campagne}</small></div>
+  <div class="silo-q">${nf(i.qte, 1)}<span> t</span></div><small class="muted">${esc(i.emplacement)}${v != null ? ` · ≈ ${keur(v)}` : ''}</small>
+  <div class="silo-bar"><i style="width:${pctSold}%"></i></div><small class="muted">${nf(pctSold)} % vendu sur ${nf(inQ, 1)} t récoltées</small>
+  <button class="btn sm" style="--c:var(--c-vente)" data-a="newSale" data-item="${i.id}">${ic('euro')} Vendre</button></div>`;
+}
+function stockCategory(cat) {
+  const m = STOCK_META[cat]; const q = norm(UI.q.stk || '');
+  let items = S.stock.filter(i => i.cat === cat && (!q || norm(i.nom + i.emplacement + i.lot).includes(q)));
+  if (cat === 'production') { items = items.filter(i => i.qte > 0.001 || UI.f.showEmpty); return `${items.length ? `<div class="silos">${items.sort((a, b) => b.campagne - a.campagne).map(siloCard).join('')}</div>` : '<div class="card empty">Aucune récolte en stock. Les récoltes s’ajoutent automatiquement quand vous enregistrez une opération « Récolte ».</div>'}`; }
+  const val = sum(items, i => stockValue(i) || 0);
+  return `<div class="row mb" style="gap:10px"><div class="search-in" style="flex:1">${ic('search')}<input class="inp" placeholder="Rechercher dans ${m.label.toLowerCase()}" data-in="stkQ" value="${esc(UI.q.stk || '')}"></div></div>
+  <div class="small muted mb">${items.length} produit(s) · valeur ${eur(val)}</div>
+  ${items.sort((a, b) => (b.qte > 0) - (a.qte > 0) || a.nom.localeCompare(b.nom)).map(i => { const l = stockLevel(i); return `<div class="st-item ${i.qte <= 0 ? 'empty' : ''}" style="--c:${m.color}" data-a="openStock" data-id="${i.id}"><span class="st-ic">${ic(m.icon)}</span><div class="st-main"><b>${esc(i.nom)}</b><small>${esc(i.emplacement || '—')}${i.lot ? ' · lot ' + esc(i.lot) : ''}</small>${gauge(i)}</div><div class="st-r"><b class="${l?.state || ''}">${qty(i.qte, i.unite)}</b><small>${eur(stockValue(i))}</small></div></div>`; }).join('') || '<div class="card empty">Aucun produit</div>'}
+  <button class="btn mt" style="width:100%" data-a="newItem" data-cat="${cat}">${ic('plus')} Ajouter un produit ${m.label.toLowerCase()}</button>`;
+}
+IN.stkQ = el => { UI.q.stk = el.value; const pos = el.selectionStart; render(); const i = document.querySelector('[data-in=stkQ]'); if (i) { i.focus(); i.setSelectionRange(pos, pos); } };
 function stockMovesView() {
   const ty = UI.f.mvT || ''; const mv = S.mouvements.filter(m => !ty || m.type === ty).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 250);
   return `<div class="row wrap mb toolbar"><div class="seg">${[['', 'Tous'], ...Object.entries(MOVE_TYPES)].map(([v, l]) => `<button class="${ty === v ? 'on' : ''}" data-a="ivF" data-k="mvT" data-v="${v}">${l}</button>`).join('')}</div><span class="sp"></span><button class="btn sm" data-a="exportMv">${ic('copy')} CSV</button></div>
@@ -726,34 +768,92 @@ FORMS.inventaire = d => { let n = 0, val = 0; Object.entries(d).forEach(([k, v])
 ACT.openStock = d => openDrawer('stock', d.id);
 DRAWERS.stock = id => {
   const i = byId('stock', id); if (!i) return null;
-  const mv = S.mouvements.filter(m => m.itemId === id).sort((a, b) => b.date.localeCompare(a.date));
-  const v = stockValue(i);
+  const m = STOCK_META[i.cat]; const v = stockValue(i); const l = stockLevel(i);
+  const mv = S.mouvements.filter(x => x.itemId === id).sort((a, b) => b.date.localeCompare(a.date));
+  const months = []; for (let k = 11; k >= 0; k--) { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - k); months.push({ key: `${d.getFullYear()}-${pad(d.getMonth() + 1)}`, label: d.toLocaleDateString('fr-FR', { month: 'short' }).replace('.', '') }); }
+  const outs = months.map(mo => r2(sum(mv.filter(x => x.date.startsWith(mo.key) && ['sortie', 'perte'].includes(x.type)), x => x.qte), 2));
+  const ins = months.map(mo => r2(sum(mv.filter(x => x.date.startsWith(mo.key) && x.type === 'entree'), x => x.qte), 2));
+  const isProd = i.cat === 'production';
+  const actions = isProd ? [['newSale', 'euro', 'Vendre', 'var(--c-vente)', { item: i.id }], ['stockOut', 'minus', 'Sortie', 'var(--c-stock)', { id: i.id }], ['stockCount', 'clipboard', 'Inventaire', 'var(--c-eco)', { id: i.id }], ['stockMove', 'move', 'Déplacer', 'var(--c-mat)', { item: i.id, type: 'transfert' }]]
+    : [['stockIn', 'plus', 'Entrée', 'var(--c-cult)', { id: i.id }], ['stockOut', 'minus', 'Sortie', 'var(--c-stock)', { id: i.id }], ['stockCount', 'clipboard', 'Inventaire', 'var(--c-eco)', { id: i.id }], ['stockMove', 'move', 'Déplacer', 'var(--c-mat)', { item: i.id, type: 'transfert' }]];
+  const h = isProd ? harvestInfo(i) : null;
   return {
-    title: esc(i.nom), body: `<div class="card pad"><div class="kv">${[['Catégorie', STOCK_CATS[i.cat]], ['Quantité disponible', qty(i.qte, i.unite)], ['Emplacement', i.emplacement], [i.cat === 'production' ? 'Cours de référence' : 'Prix moyen pondéré', i.cat === 'production' ? (refPrice(i.culture) != null ? `${eur(refPrice(i.culture))}/t` : 'non disponible') : `${eur(i.pmp, 3)}/${i.unite}`], [i.cat === 'production' ? 'Valeur théorique' : 'Valeur du stock', v == null ? '—' : eur(v)], ['Fournisseur', i.fournisseur || '—'], ['N° de lot', i.lot || '—'], ['Dernière entrée', dfr(i.dateEntree)], ['Seuil d’alerte', i.seuil ? qty(i.seuil, i.unite) : '—']].map(([k, x]) => `<div><span>${k}</span><b>${esc(x)}</b></div>`).join('')}</div>
-    ${i.cat === 'production' ? `<div class="formula">Valeur théorique = ${nfx(i.qte, 2)} t × ${refPrice(i.culture) != null ? eur(refPrice(i.culture), 2) : '?'} (dernier cours : ${esc(S.cours[coursKeyOf(i.culture)]?.source || 'aucune source')}). Ce n'est pas du chiffre d'affaires réalisé.</div>` : ''}</div>
-    <div class="row wrap mt">${i.cat === 'production' ? `<button class="btn p" data-a="newSale" data-item="${i.id}">${ic('cart')} Vendre</button>` : `<button class="btn p" data-a="purchase" data-item="${i.id}">${ic('plus')} Entrée / achat</button>`}<button class="btn" data-a="stockMove" data-item="${i.id}">${ic('move')} Mouvement</button><button class="btn" data-a="editItem" data-id="${i.id}">${ic('edit')} Modifier</button></div>
-    <div class="card mt"><div class="card-h"><h3>Historique des mouvements</h3><span class="sub">${mv.length}</span></div><div class="tbl-wrap"><table class="t"><tbody>${mv.slice(0, 120).map(moveRow).join('') || '<tr><td class="empty">Aucun mouvement</td></tr>'}</tbody></table></div></div>`
+    title: esc(i.nom), body: `<div class="st-sheet" style="--c:${isProd ? CULTURES[i.culture]?.color || m.color : m.color}"><div class="row"><span class="st-ic big">${ic(m.icon)}</span><div style="flex:1;min-width:0"><small>${m.label}${i.lot ? ' · lot ' + esc(i.lot) : ''}</small><div class="st-big ${l?.state || ''}">${nfx(i.qte, 2)} <span>${i.unite}</span></div><small>${esc(i.emplacement || '—')}</small></div><div style="text-align:right"><small>${isProd ? 'Valeur théorique' : 'Valeur'}</small><b style="display:block;font-size:18px">${v == null ? '—' : eur(v)}</b><small>${isProd ? (refPrice(i.culture) != null ? `${eur(refPrice(i.culture))}/t` : 'pas de cours') : `${eur(i.pmp, i.pmp < 10 ? 3 : 2)}/${i.unite}`}</small></div></div>
+      ${gauge(i, true)}${l && l.ratio != null ? `<div class="row small" style="justify-content:space-between;margin-top:6px"><span>${l.state === 'ok' ? 'Niveau correct' : l.state === 'warn' ? 'Sous le seuil d’alerte' : 'Épuisé'}</span><span class="muted">seuil ${qty(i.seuil, i.unite)}${i.capacite ? ` · capacité ${qty(i.capacite, i.unite)}` : ''}</span></div>` : ''}
+      ${h ? `<div class="silo-bar" style="margin-top:12px"><i style="width:${h.inQ ? Math.min(100, h.sold / h.inQ * 100) : 0}%"></i></div><div class="small muted" style="margin-top:4px">${nf(h.sold, 1)} t vendues sur ${nf(h.inQ, 1)} t récoltées</div>` : ''}</div>
+    <div class="st-acts">${actions.map(([a, ico, lab, c, data]) => `<button style="--c:${c}" data-a="${a}" ${Object.entries(data).map(([k, x]) => `data-${k}="${x}"`).join(' ')}><span>${ic(ico)}</span>${lab}</button>`).join('')}</div>
+    <div class="card mt">${card('Entrées et sorties · 12 mois', barChart({ labels: months.map(x => x.label), series: [{ name: 'Entrées', color: 'var(--c-cult)', values: ins }, { name: 'Sorties', color: 'var(--c-stock)', values: outs }], height: 170, fmt: x => nfx(x, 0) }))}</div>
+    <div class="card pad mt"><div class="kv">${[[isProd ? 'Campagne' : 'Fournisseur', isProd ? i.campagne : i.fournisseur || '—'], ['Dernière entrée', dfr(i.dateEntree)], ['Seuil d’alerte', i.seuil ? qty(i.seuil, i.unite) : '—'], ['Capacité', i.capacite ? qty(i.capacite, i.unite) : '—']].map(([k, x]) => `<div><span>${k}</span><b>${esc(x)}</b></div>`).join('')}</div><button class="btn sm mt" data-a="editItem" data-id="${i.id}">${ic('edit')} Modifier le produit</button></div>
+    <div class="sec-h"><h3>Historique</h3><span class="muted small">${mv.length} mouvement(s)</span></div><div class="card">${mv.slice(0, 60).map(mMove).join('') || '<div class="empty">Aucun mouvement</div>'}</div>`
   };
 };
-ACT.purchase = d => {
-  const intr = S.stock.filter(x => x.cat !== 'production');
-  const sel = d.item || intr[0]?.id;
+/* ---- Saisies rapides : quantité par boutons ---- */
+function qtyField(unit, val = '') {
+  const pr = QTY_PRESETS[unit] || [1, 5, 10, 50];
+  return `<div class="qty-box"><button type="button" class="qb" data-a="qtyAdj" data-d="-1">${ic('minus')}</button><input class="qty-in" name="qte" inputmode="decimal" value="${val}" placeholder="0" autocomplete="off"><span class="qu">${unit}</span><button type="button" class="qb" data-a="qtyAdj" data-d="1">${ic('plus')}</button></div>
+  <div class="qty-pre">${pr.map(v => `<button type="button" data-a="qtyAdd" data-v="${v}">+ ${nf(v)}</button>`).join('')}<button type="button" data-a="qtyAdd" data-v="0">Effacer</button></div>`;
+}
+const qtyInput = () => document.querySelector('#mf .qty-in');
+const qtyVal = () => parseFloat(String(qtyInput()?.value || '0').replace(',', '.')) || 0;
+ACT.qtyAdd = d => { const i = qtyInput(); if (!i) return; i.value = +d.v === 0 ? '' : String(r2(qtyVal() + +d.v, 3)).replace('.', ','); i.dispatchEvent(new Event('input', { bubbles: true })); };
+ACT.qtyAdj = d => { const i = qtyInput(); if (!i) return; const step = qtyVal() >= 100 ? 10 : 1; i.value = String(Math.max(0, r2(qtyVal() + step * +d.d, 3))).replace('.', ','); i.dispatchEvent(new Event('input', { bubbles: true })); };
+IN.qtyLive = () => { const el = document.getElementById('qtyLive'); if (el) el.innerHTML = el.dataset.f ? new Function('q', el.dataset.f)(qtyVal()) : ''; };
+document.addEventListener('input', e => { if (e.target.classList?.contains('qty-in') || (e.target.name === 'prix' && e.target.closest('#mf') && qtyInput())) { const el = document.getElementById('qtyLive'); if (el && QTY_LIVE) el.innerHTML = QTY_LIVE(qtyVal(), e.target.form); } });
+let QTY_LIVE = null;
+function pickProduct(title, filter, next) {
+  const items = S.stock.filter(filter);
+  openModal({ title, body: `${Object.entries(STOCK_META).map(([k, m]) => { const its = items.filter(i => i.cat === k); return its.length ? `<div class="ob-fam" style="margin-top:12px">${m.label}</div><div class="card">${its.map(i => `<div class="mrow" style="--c:${m.color}" data-a="${next}" data-id="${i.id}"><div class="ic">${ic(m.icon)}</div><div class="tx"><b>${esc(i.nom)}</b><span>${qty(i.qte, i.unite)} · ${esc(i.emplacement || '')}</span></div>${ic('chevR')}</div>`).join('')}</div>` : ''; }).join('')}`, foot: '<button type="button" class="btn" data-a="newItemFromPick">' + ic('plus') + ' Nouveau produit</button><button type="button" class="btn" data-a="closeModal">Fermer</button>' });
+}
+ACT.newItemFromPick = () => { closeModal(); setTimeout(() => itemForm(null), 200); };
+ACT.purchase = d => { if (d.item) return ACT.stockIn({ id: d.item }); pickProduct('Entrée en stock — quel produit ?', i => i.cat !== 'production', 'stockInGo'); };
+ACT.stockInGo = d => { closeModal(); setTimeout(() => ACT.stockIn(d), 200); };
+ACT.stockOutPick = () => pickProduct('Sortie de stock — quel produit ?', i => i.qte > 0, 'stockOutGo');
+ACT.stockOutGo = d => { closeModal(); setTimeout(() => ACT.stockOut(d), 200); };
+ACT.stockIn = d => {
+  const it = byId('stock', d.id); const m = STOCK_META[it.cat];
+  QTY_LIVE = (q, f) => { const p = parseFloat(String(f?.prix?.value || '').replace(',', '.')) || 0; return q > 0 ? `Nouveau stock : <b>${qty(it.qte + q, it.unite)}</b>${p ? ` · montant <b>${eur(q * p, 2)}</b>` : ''}` : `Stock actuel : ${qty(it.qte, it.unite)}`; };
   openModal({
-    title: 'Entrée en stock / achat', body: `<label class="field"><span>Article</span><select class="inp" name="itemId" data-ch="purItem">${Object.entries(STOCK_CATS).filter(([c]) => c !== 'production').map(([c, l]) => `<optgroup label="${l}">${opts(intr.filter(s => s.cat === c).map(s => [s.id, `${s.nom} (${s.unite})`]), sel)}</optgroup>`).join('')}</select></label>
-    <div class="grid3"><label class="field"><span>Quantité</span><input class="inp" type="number" step="0.01" min="0" name="qte" required></label><label class="field"><span>Prix unitaire HT (€)</span><input class="inp" type="number" step="0.0001" min="0" name="prix" value="${byId('stock', sel)?.pmp ?? ''}" required></label><label class="field"><span>Date</span><input class="inp" type="date" name="date" value="${TODAY}"></label></div>
-    <div class="grid3"><label class="field"><span>Fournisseur</span><input class="inp" name="fournisseur" value="${esc(byId('stock', sel)?.fournisseur || '')}"></label><label class="field"><span>N° de lot</span><input class="inp" name="lot" value="${esc(byId('stock', sel)?.lot || '')}"></label><label class="field"><span>Réf. facture</span><input class="inp" name="ref"></label></div>
-    <div class="note">${ic('info')}<span>L’achat crée une <b>entrée de stock</b> (prix moyen recalculé) et une <b>charge</b> dans la gestion économique.</span></div>`,
-    submit: 'Enregistrer l’achat', onSubmit: f => { if (!(+f.qte > 0) || !(+f.prix >= 0)) throw new Error('Quantité et prix requis'); const it = byId('stock', f.itemId); if (f.lot) it.lot = f.lot; const ch = recordPurchase({ itemId: f.itemId, qte: +f.qte, prixUnit: +f.prix, date: f.date, fournisseur: f.fournisseur, ref: f.ref }); commit(`Achat enregistré : ${eur(ch.montant)} · stock ${qty(it.qte, it.unite)}`); }
+    title: `${ic(m.icon)} Entrée · ${esc(it.nom)}`, body: `${qtyField(it.unite)}<div class="qty-live" id="qtyLive">Stock actuel : ${qty(it.qte, it.unite)}</div>
+    <div class="grid2"><label class="field"><span>Prix d’achat HT (€/${it.unite})</span><input class="inp" name="prix" inputmode="decimal" value="${it.pmp ? String(r2(it.pmp, 4)).replace('.', ',') : ''}" placeholder="Facultatif"></label><label class="field"><span>Date</span><input class="inp" type="date" name="date" value="${TODAY}"></label></div>
+    <details class="more"><summary>Fournisseur, lot, facture</summary><div class="grid3 mt"><label class="field"><span>Fournisseur</span><input class="inp" name="fournisseur" value="${esc(it.fournisseur || '')}"></label><label class="field"><span>N° de lot</span><input class="inp" name="lot" value="${esc(it.lot || '')}"></label><label class="field"><span>Réf. facture</span><input class="inp" name="ref"></label></div></details>
+    <div class="note small">${ic('info')}<span>Avec un prix, l’entrée est enregistrée comme un <b>achat</b> (charge + prix moyen recalculé). Sans prix, c’est une simple entrée.</span></div>`,
+    submit: 'Valider l’entrée', onSubmit: f => {
+      const q = parseFloat(String(f.qte).replace(',', '.')); const p = parseFloat(String(f.prix || '').replace(',', '.'));
+      if (!(q > 0)) throw new Error('Indiquez une quantité');
+      if (f.lot) it.lot = f.lot;
+      if (p > 0) recordPurchase({ itemId: it.id, qte: q, prixUnit: p, date: f.date, fournisseur: f.fournisseur, ref: f.ref }); else stockMove(it.id, 'entree', q, { date: f.date, motif: f.fournisseur ? `Entrée — ${f.fournisseur}` : 'Entrée sans achat' });
+      commit(`+ ${qty(q, it.unite)} · stock ${qty(it.qte, it.unite)}`);
+    }
   });
 };
-CH.purItem = el => { const it = byId('stock', el.value); const f = el.form; f.prix.value = it.pmp; f.fournisseur.value = it.fournisseur || ''; f.lot.value = it.lot || ''; };
+ACT.stockOut = d => {
+  const it = byId('stock', d.id); const m = STOCK_META[it.cat];
+  QTY_LIVE = q => q > it.qte + 1e-6 ? `<span style="color:var(--late)">Plus que le stock disponible (${qty(it.qte, it.unite)})</span>` : q > 0 ? `Reste après sortie : <b>${qty(it.qte - q, it.unite)}</b>` : `Disponible : ${qty(it.qte, it.unite)}`;
+  openModal({
+    title: `${ic(m.icon)} Sortie · ${esc(it.nom)}`, body: `${qtyField(it.unite)}<div class="qty-live" id="qtyLive">Disponible : ${qty(it.qte, it.unite)}</div>
+    <div class="field"><span>Motif</span><div class="ob-chips" id="motifs">${[['sortie', 'Utilisation', 'Hors intervention saisie'], ['sortie', 'Cession / don', ''], ['perte', 'Perte / casse', ''], ['perte', 'Périmé', '']].map(([t, l], k) => `<label class="fchip ${k === 0 ? 'on' : ''}" style="--c:var(--c-stock)"><input type="radio" name="motif" value="${t}|${l}" ${k === 0 ? 'checked' : ''} hidden onchange="document.querySelectorAll('#motifs .fchip').forEach(x=>x.classList.toggle('on',x.contains(this)))">${l}</label>`).join('')}</div></div>
+    <label class="field"><span>Date</span><input class="inp" type="date" name="date" value="${TODAY}"></label>
+    ${it.cat !== 'production' ? `<div class="note small">${ic('info')}<span>Pour un produit utilisé sur une parcelle, saisissez plutôt une <b>opération</b> : la sortie de stock et le coût sont calculés automatiquement.</span></div>` : ''}`,
+    submit: 'Valider la sortie', onSubmit: f => {
+      const q = parseFloat(String(f.qte).replace(',', '.')); if (!(q > 0)) throw new Error('Indiquez une quantité');
+      if (q > it.qte + 1e-6) throw new Error(`Quantité supérieure au stock (${qty(it.qte, it.unite)})`);
+      const [t, l] = String(f.motif).split('|'); stockMove(it.id, t, q, { date: f.date, motif: l });
+      commit(`− ${qty(q, it.unite)} · stock ${qty(it.qte, it.unite)}`);
+    }
+  });
+};
+ACT.stockCount = d => {
+  const it = byId('stock', d.id);
+  QTY_LIVE = q => { const diff = r2(q - it.qte, 3); return qtyInput()?.value === '' ? `Quantité théorique : ${qty(it.qte, it.unite)}` : Math.abs(diff) < 1e-6 ? 'Aucun écart' : `Écart : <b style="color:${diff < 0 ? 'var(--late)' : 'var(--c-cult)'}">${diff > 0 ? '+' : ''}${qty(diff, it.unite)}</b> (${eur(diff * (it.pmp || 0))})`; };
+  openModal({ title: `Inventaire · ${esc(it.nom)}`, body: `<p class="small muted" style="margin-top:0">Indiquez la quantité réellement comptée.</p>${qtyField(it.unite, String(r2(it.qte, 2)).replace('.', ','))}<div class="qty-live" id="qtyLive">Quantité théorique : ${qty(it.qte, it.unite)}</div>`, submit: 'Valider le comptage', onSubmit: f => { const q = parseFloat(String(f.qte).replace(',', '.')); if (!(q >= 0)) throw new Error('Quantité invalide'); const diff = r2(q - it.qte, 3); if (Math.abs(diff) < 1e-6) { commit('Aucun écart'); return; } stockMove(it.id, 'ajustement', diff, { motif: `Inventaire du ${dfr(TODAY)}` }); commit(`Inventaire enregistré · écart ${diff > 0 ? '+' : ''}${qty(diff, it.unite)}`); } });
+};
 ACT.stockMove = d => {
   const sel = d.item || S.stock[0]?.id;
   openModal({
     title: 'Mouvement de stock', body: `<label class="field"><span>Article</span><select class="inp" name="itemId">${Object.entries(STOCK_CATS).map(([c, l]) => `<optgroup label="${l}">${opts(S.stock.filter(s => s.cat === c && (c !== 'production' || s.qte > 0)).map(s => [s.id, `${s.nom} — ${qty(s.qte, s.unite)} · ${s.emplacement}`]), sel)}</optgroup>`).join('')}</select></label>
-    <div class="field"><span>Type</span><select class="inp" name="type" data-ch="mvType">${opts([['sortie', 'Sortie (hors intervention)'], ['transfert', 'Transfert d’emplacement'], ['perte', 'Perte / casse / péremption'], ['ajustement', 'Ajustement (+/−)'], ['entree', 'Entrée sans achat (don, retour…)']], 'sortie')}</select></div>
+    <div class="field"><span>Type</span><select class="inp" name="type" data-ch="mvType">${opts([['sortie', 'Sortie (hors intervention)'], ['transfert', 'Déplacer vers un autre emplacement'], ['perte', 'Perte / casse / péremption'], ['ajustement', 'Ajustement (+/−)'], ['entree', 'Entrée sans achat (don, retour…)']], d.type || 'sortie')}</select></div>
     <div class="grid2"><label class="field"><span>Quantité <small id="mvHint">(positive)</small></span><input class="inp" type="number" step="0.01" name="qte" required></label><label class="field"><span>Date</span><input class="inp" type="date" name="date" value="${TODAY}"></label></div>
-    <label class="field" id="mvDest" style="display:none"><span>Nouvel emplacement</span><input class="inp" name="dest" list="emps"><datalist id="emps">${[...new Set(S.stock.map(s => s.emplacement))].map(e => `<option value="${esc(e)}">`).join('')}</datalist></label>
+    <label class="field" id="mvDest" style="${d.type === 'transfert' ? '' : 'display:none'}"><span>Nouvel emplacement</span><input class="inp" name="dest" list="emps"><datalist id="emps">${[...new Set(S.stock.map(s => s.emplacement))].map(e => `<option value="${esc(e)}">`).join('')}</datalist></label>
     <label class="field"><span>Motif</span><input class="inp" name="motif" placeholder="Ex. : semences de ferme, casse…"></label>`,
     submit: 'Enregistrer', onSubmit: f => {
       const it = byId('stock', f.itemId); const q = +f.qte; if (!q) throw new Error('Quantité requise');
@@ -765,16 +865,24 @@ ACT.stockMove = d => {
   });
 };
 CH.mvType = el => { document.getElementById('mvDest').style.display = el.value === 'transfert' ? '' : 'none'; document.getElementById('mvHint').textContent = el.value === 'ajustement' ? '(+ ou −)' : '(positive)'; };
-ACT.newItem = () => itemForm(null);
+ACT.newItem = d => itemForm(null, d && d.cat);
 ACT.editItem = d => itemForm(d.id);
-function itemForm(id) {
-  const i = id ? byId('stock', id) : { cat: 'engrais', unite: 'kg', seuil: 0 };
+function itemForm(id, preCat) {
+  const i = id ? byId('stock', id) : { cat: preCat && preCat !== 'production' ? preCat : 'engrais', unite: 'kg', seuil: 0 };
+  const units = [['kg', 'kg'], ['t', 'tonne'], ['L', 'litre'], ['u', 'unité'], ['dose', 'dose']];
   openModal({
-    title: id ? 'Modifier l’article' : 'Nouvel article', body: `<label class="field"><span>Désignation</span><input class="inp" name="nom" required value="${esc(i.nom || '')}"></label>
-    <div class="grid3"><label class="field"><span>Catégorie</span><select class="inp" name="cat" ${id ? 'disabled' : ''}>${opts(Object.entries(STOCK_CATS).filter(([k]) => k !== 'production' || id), i.cat)}</select></label><label class="field"><span>Unité</span><select class="inp" name="unite">${opts([['t', 'tonne'], ['kg', 'kilogramme'], ['L', 'litre'], ['u', 'unité'], ['dose', 'dose']], i.unite)}</select></label><label class="field"><span>Seuil d’alerte</span><input class="inp" type="number" step="0.01" name="seuil" value="${i.seuil || 0}"></label></div>
-    <div class="grid3"><label class="field"><span>Emplacement</span><input class="inp" name="emplacement" value="${esc(i.emplacement || '')}"></label><label class="field"><span>Fournisseur</span><input class="inp" name="fournisseur" value="${esc(i.fournisseur || '')}"></label><label class="field"><span>N° de lot</span><input class="inp" name="lot" value="${esc(i.lot || '')}"></label></div>
-    ${!id ? '<div class="note">' + ic('info') + '<span>L’article est créé avec une quantité nulle : enregistrez ensuite une entrée / un achat.</span></div>' : ''}`,
-    onSubmit: f => { if (!f.nom) throw new Error('Désignation requise'); if (id) Object.assign(i, { nom: f.nom, unite: f.unite, seuil: +f.seuil || 0, emplacement: f.emplacement, fournisseur: f.fournisseur, lot: f.lot }); else S.stock.push({ id: uid('st'), nom: f.nom, cat: f.cat, unite: f.unite, qte: 0, pmp: 0, basePrix: 0, batch: 1, seuil: +f.seuil || 0, emplacement: f.emplacement, fournisseur: f.fournisseur, lot: f.lot, dateEntree: TODAY }); commit(id ? 'Article modifié' : 'Article créé'); }
+    title: id ? 'Modifier le produit' : 'Nouveau produit', body: `${!id ? `<div class="field"><span>Catégorie</span><div class="st-pick">${Object.entries(STOCK_META).filter(([k]) => k !== 'production').map(([k, m]) => `<label class="${i.cat === k ? 'on' : ''}" style="--c:${m.color}"><input type="radio" name="cat" value="${k}" ${i.cat === k ? 'checked' : ''} hidden onchange="this.closest('.st-pick').querySelectorAll('label').forEach(x=>x.classList.toggle('on',x.contains(this)))"><span class="st-ic">${ic(m.icon)}</span>${m.label}</label>`).join('')}</div></div>` : ''}
+    <label class="field"><span>Nom du produit</span><input class="inp" name="nom" required value="${esc(i.nom || '')}" placeholder="Ex. : Ammonitrate 27 %"></label>
+    <div class="field"><span>Unité</span><div class="ob-chips" id="units">${units.map(([v, l]) => `<label class="fchip ${i.unite === v ? 'on' : ''}" style="--c:var(--primary)"><input type="radio" name="unite" value="${v}" ${i.unite === v ? 'checked' : ''} hidden onchange="document.querySelectorAll('#units .fchip').forEach(x=>x.classList.toggle('on',x.contains(this)))">${l}</label>`).join('')}</div></div>
+    <div class="grid2"><label class="field"><span>Seuil d’alerte</span><input class="inp" name="seuil" inputmode="decimal" value="${i.seuil || ''}" placeholder="Ex. : 1000"><small>Alerte quand le stock passe en dessous</small></label><label class="field"><span>Capacité de stockage</span><input class="inp" name="capacite" inputmode="decimal" value="${i.capacite || ''}" placeholder="Facultatif"><small>Ex. : volume de la cuve, pour la jauge</small></label></div>
+    <div class="grid2"><label class="field"><span>Emplacement</span><input class="inp" name="emplacement" list="emps" value="${esc(i.emplacement || '')}" placeholder="Hangar, cuve, cellule…"><datalist id="emps">${[...new Set(S.stock.map(s => s.emplacement).filter(Boolean))].map(e => `<option value="${esc(e)}">`).join('')}</datalist></label><label class="field"><span>Fournisseur habituel</span><input class="inp" name="fournisseur" value="${esc(i.fournisseur || '')}"></label></div>`,
+    submit: id ? 'Enregistrer' : 'Créer le produit',
+    onSubmit: f => {
+      if (!f.nom) throw new Error('Nom requis'); const num = v => parseFloat(String(v || '').replace(',', '.')) || 0;
+      const n = { nom: f.nom, unite: f.unite || 'kg', seuil: num(f.seuil), capacite: num(f.capacite) || null, emplacement: f.emplacement, fournisseur: f.fournisseur };
+      if (id) Object.assign(i, n); else { const it = { id: uid('st'), cat: f.cat || 'engrais', qte: 0, pmp: 0, basePrix: 0, batch: 1, lot: '', dateEntree: TODAY, ...n }; S.stock.push(it); UI.tabs.stk = it.cat; }
+      commit(id ? 'Produit modifié' : 'Produit créé — touchez « Entrée » pour saisir votre stock');
+    }
   });
 }
 
