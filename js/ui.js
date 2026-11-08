@@ -2,7 +2,7 @@
 /* =====================================================================
    AGRI PILOT — Interface : icônes, formats, graphiques, structure, routeur
    ===================================================================== */
-const APP_VERSION = '2026.11.08-v16';
+const APP_VERSION = '2026.11.08-v17';
 const ICONS = {
   home: '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>',
   farm: '<path d="M3 21V10l9-6 9 6v11M9 21v-6h6v6M2 21h20"/>',
@@ -26,6 +26,8 @@ const ICONS = {
   check: '<path d="M20 6 9 17l-5-5"/>',
   calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
   euro: '<path d="M4 10h12M4 14h9M19 6a7.7 7.7 0 0 0-5.2-2A7.9 7.9 0 0 0 6 12c0 4.4 3.5 8 7.8 8 2 0 3.8-.8 5.2-2"/>',
+  undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/>',
+  swap: '<path d="M7 4 3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7"/>',
   layers: '<path d="M12 2 2 7l10 5 10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>',
   trend: '<path d="M22 7 13.5 15.5 8.5 10.5 2 17M16 7h6v6"/>',
   star: '<path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/>',
@@ -151,6 +153,7 @@ const ROUTES = [
   ['equipe', "Main-d'œuvre", 'users', 'Pilotage'],
   ['exploitation', 'Exploitation', 'farm', 'Pilotage'],
   ['parcellaire', 'Parcellaire', 'map', 'Production'],
+  ['assolement', 'Assolement', 'layers', 'Production'],
   ['itk', 'Itinéraires techniques', 'sprout', 'Production'],
   ['interventions', 'Interventions', 'tasks', 'Production'],
   ['stocks', 'Stocks', 'box', 'Production'],
@@ -161,14 +164,15 @@ const ROUTES = [
   ['documents', 'Documents', 'file', 'Administration'],
   ['parametres', 'Paramètres', 'settings', 'Administration'],
 ];
-const DEFAULT_WIDGETS = ['premiers', 'categories', 'priorites', 'cultures', 'actions', 'kpis', 'surfaces', 'marges', 'ca', 'charges', 'stocks', 'cours', 'assistant'];
+const DEFAULT_WIDGETS = ['premiers', 'aujourdhui', 'anneaux', 'semaine', 'modules', 'cultures', 'kpis', 'surfaces', 'marges', 'ca', 'charges', 'stocks', 'cours', 'assistant', 'categories', 'priorites', 'actions'];
+const WIDGETS_OFF = ['categories', 'priorites', 'actions', 'assistant', 'cours'];
 /* Couleur de catégorie de chaque module (cohérente avec les catégories de tâches) */
-const MOD_COLOR = { dashboard: 'var(--primary)', taches: 'var(--late)', equipe: 'var(--c-admin)', exploitation: 'var(--c-cult)', parcellaire: 'var(--c-cult)', itk: 'var(--c-cult)', interventions: 'var(--c-cult)', stocks: 'var(--c-stock)', ventes: 'var(--c-vente)', economie: 'var(--c-eco)', materiel: 'var(--c-mat)', pac: 'var(--c-admin)', documents: 'var(--c-doc)', parametres: 'var(--c-set)' };
-const WIDGET_NAMES = { premiers: 'Premiers pas (nouvelle ferme)', cultures: 'Mes cultures', categories: 'Tâches par catégorie', priorites: 'À faire en priorité', actions: 'Actions rapides', kpis: 'Chiffres clés', surfaces: 'Répartition des surfaces', ca: "Évolution du chiffre d'affaires et des charges", marges: 'Marges par culture', charges: 'Répartition des charges', stocks: 'Répartition des stocks', cours: 'Cours agricoles', assistant: 'Assistant (aperçu)' };
-let PREFS = { theme: 'light', camp: CURRENT_CAMP - 1, widgets: DEFAULT_WIDGETS.map(id => ({ id, on: true })) };
-try { const p = JSON.parse(localStorage.getItem(PREF_KEY) || 'null'); if (p) PREFS = { ...PREFS, ...p }; } catch (e) { }
+const MOD_COLOR = { dashboard: 'var(--primary)', taches: 'var(--late)', equipe: 'var(--c-admin)', exploitation: 'var(--c-cult)', parcellaire: 'var(--c-cult)', assolement: 'var(--c-cult)', itk: 'var(--c-cult)', interventions: 'var(--c-cult)', stocks: 'var(--c-stock)', ventes: 'var(--c-vente)', economie: 'var(--c-eco)', materiel: 'var(--c-mat)', pac: 'var(--c-admin)', documents: 'var(--c-doc)', parametres: 'var(--c-set)' };
+const WIDGET_NAMES = { aujourdhui: 'Aujourd’hui (tâches urgentes, équipe)', anneaux: 'Avancement (travaux, semis, stocks)', semaine: 'Cette semaine', modules: 'Mon exploitation (raccourcis)', premiers: 'Premiers pas (nouvelle ferme)', cultures: 'Mes cultures', categories: 'Tâches par catégorie', priorites: 'À faire en priorité', actions: 'Actions rapides', kpis: 'Chiffres clés', surfaces: 'Répartition des surfaces', ca: "Évolution du chiffre d'affaires et des charges", marges: 'Marges par culture', charges: 'Répartition des charges', stocks: 'Répartition des stocks', cours: 'Cours agricoles', assistant: 'Assistant (aperçu)' };
+let PREFS = { theme: 'light', camp: CURRENT_CAMP - 1, widgets: DEFAULT_WIDGETS.map(id => ({ id, on: !WIDGETS_OFF.includes(id) })), home2: true };
+try { const p = JSON.parse(localStorage.getItem(PREF_KEY) || 'null'); if (p) { if (!p.home2) { delete p.widgets; p.home2 = true; } PREFS = { ...PREFS, ...p }; } } catch (e) { }
 PREFS.widgets = PREFS.widgets.filter(w => DEFAULT_WIDGETS.includes(w.id));
-DEFAULT_WIDGETS.forEach((id, i) => { if (!PREFS.widgets.find(w => w.id === id)) PREFS.widgets.splice(Math.min(i, PREFS.widgets.length), 0, { id, on: true }); });
+DEFAULT_WIDGETS.forEach((id, i) => { if (!PREFS.widgets.find(w => w.id === id)) PREFS.widgets.splice(Math.min(i, PREFS.widgets.length), 0, { id, on: !WIDGETS_OFF.includes(id) }); });
 const savePrefs = () => { try { localStorage.setItem(PREF_KEY, JSON.stringify(PREFS)); } catch (e) { } };
 const UI = { route: 'dashboard', drawer: null, tabs: {}, q: {}, f: {}, notif: false, mapEdit: null, mapDraw: null, mapSel: null, assist: null, customize: false };
 const tab = (k, def) => UI.tabs[k] || def;

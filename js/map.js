@@ -25,7 +25,7 @@ function mapLeafletHTML() {
     <div class="lmap-ctl rside"><button class="lbtn" data-a="mapSearch" aria-label="Rechercher un lieu">${ic('search')}</button><button class="lbtn" data-a="mapLocate" aria-label="Ma position">${ic('pin')}</button><button class="lbtn" data-a="mapFit" aria-label="Voir toutes les parcelles">${ic('map')}</button></div>
   </div>`;
 }
-const realParcels = () => S.parcelles.filter(p => !p.contourProvisoire && p.coords?.length >= 3);
+const realParcels = () => landParcels().filter(p => !p.contourProvisoire && p.coords?.length >= 3);
 function initLeaflet() {
   const el = document.getElementById('lmap'); if (!el || !hasLeaflet()) return;
   if (LMAP) { try { LMAP.remove(); } catch (e) { } LMAP = null; }
@@ -36,11 +36,11 @@ function initLeaflet() {
   (PREFS.mapOv || []).forEach(k => { const o = MAP_OVERLAYS[k]; if (o) L.tileLayer(o.url, { maxNativeZoom: o.max, maxZoom: 20, opacity: o.opacity || 1, crossOrigin: true }).addTo(LMAP); });
   const filt = UI.f.parcCult;
   realParcels().forEach(p => {
-    const c = curCult(p)?.culture, col = CULTURES[c]?.color || '#9AA79F';
+    const zz = zonesOf(p); const c = (zz.length ? curCult(zz[0]) : curCult(p))?.culture, col = CULTURES[c]?.color || '#9AA79F';
     if (EDIT && EDIT.pid === p.id) return;
     const dim = filt && filt !== c;
     const poly = L.polygon(p.coords, { color: '#ffffff', weight: 2, fillColor: col, fillOpacity: dim ? 0.12 : 0.45, opacity: dim ? 0.4 : 1 }).addTo(LMAP);
-    if (!dim) poly.bindTooltip(`<b>${esc(p.nom)}</b><br>${nf(p.surface, 2)} ha`, { permanent: true, direction: 'center', className: 'ptip' });
+    if (!dim) poly.bindTooltip(zonesOf(p).length ? `<b>${esc(p.nom)}</b><br>${zonesOf(p).map(z => `${esc(CULTURES[curCult(z)?.culture]?.nom || '')} ${nf(z.surface, 1)} ha`).join(' · ')}` : `<b>${esc(p.nom)}</b><br>${nf(p.surface, 2)} ha`, { permanent: true, direction: 'center', className: 'ptip' });
     poly.on('click', e => { if (EDIT) return; L.DomEvent.stopPropagation(e); openDrawer('parcelle', p.id); });
   });
   if (UI.mapView) LMAP.setView(UI.mapView.c, UI.mapView.z);

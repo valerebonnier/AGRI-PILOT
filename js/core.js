@@ -334,10 +334,26 @@ function stockTotals() {
   return { intrants: r2(intrants), production: r2(production), sansCours };
 }
 
-function surfaceTotale() { return r2(sum(S.parcelles, p => p.surface), 2); }
+/* Parcelles : une parcelle peut être divisée en zones de culture pour une campagne (zones = parcelles enfants),
+   et entrer / sortir de l'exploitation (mouvements de terres). */
+function inLand(p, camp = CURRENT_CAMP) { if (p.dateEntree && p.dateEntree > `${camp}-07-31`) return false; if (p.dateSortie && (p.dateSortie < `${camp - 1}-08-01` || (camp >= CURRENT_CAMP && p.dateSortie <= TODAY))) return false; return true; }
+/** Parcelles opérationnelles d'une campagne : les zones remplacent la parcelle divisée. */
+function isActive(p, camp = CURRENT_CAMP) { if (p.parentId) { const par = S.parcelles.find(x => x.id === p.parentId); return !!p.cultures?.[camp] && (!par || inLand(par, camp)); } if ((p.divisions || {})[camp]) return false; return inLand(p, camp); }
+const activeParcels = (camp = CURRENT_CAMP) => S.parcelles.filter(p => isActive(p, camp));
+/** Champs physiques (hors zones) présents sur l'exploitation pour une campagne. */
+const landParcels = (camp = CURRENT_CAMP) => S.parcelles.filter(p => !p.parentId && inLand(p, camp));
+const zonesOf = (p, camp = CURRENT_CAMP) => S.parcelles.filter(z => z.parentId === p.id && z.cultures?.[camp]);
+/** Nouvelle fiche culture d'une parcelle pour une campagne, semis calé sur l'itinéraire type. */
+function newCultRec(culture, camp = CURRENT_CAMP, extra = {}) {
+  const md = S.itk?.[culture]?.semisType || '10-01', yr = +md.slice(0, 2) >= 8 ? camp - 1 : camp;
+  const semis = `${yr}-${md}`;
+  const rec = S.itk?.[culture]?.steps.find(s => s.type === 'recolte');
+  return { culture, variete: '', semis, recoltePrev: rec ? addDays(semis, rec.off) : null, rdtPrev: null, ...extra };
+}
+function surfaceTotale(camp = CURRENT_CAMP) { return r2(sum(landParcels(camp), p => p.surface), 2); }
 function assolement(camp) {
   const m = {};
-  S.parcelles.forEach(p => { const c = p.cultures[camp]?.culture; if (!c) return; m[c] = (m[c] || 0) + p.surface; });
+  activeParcels(camp).forEach(p => { const c = p.cultures[camp]?.culture; if (!c) return; m[c] = (m[c] || 0) + p.surface; });
   return Object.entries(m).map(([k, v]) => ({ key: k, label: CULTURES[k]?.nom || k, value: r2(v), color: CULTURES[k]?.color })).sort((a, b) => b.value - a.value);
 }
 
@@ -357,9 +373,9 @@ function econ(camp) {
   const charges = S.charges.filter(c => c.campagne === camp);
   const ventes = S.ventes.filter(v => v.campagne === camp);
   const fixes = sum(charges.filter(c => FIXED_CATS.includes(c.cat)), c => c.montant);
-  const surfTot = sum(S.parcelles.filter(p => p.cultures[camp]), p => p.surface);
+  const surfTot = sum(activeParcels(camp).filter(p => p.cultures[camp]), p => p.surface);
   const cult = {};
-  S.parcelles.forEach(p => {
+  activeParcels(camp).forEach(p => {
     const rec = p.cultures[camp]; if (!rec) return;
     const k = rec.culture;
     const c = cult[k] || (cult[k] = { key: k, nom: CULTURES[k]?.nom || k, color: CULTURES[k]?.color, surface: 0, production: 0, intrants: 0, meca: 0, ventesQ: 0, ventesCA: 0, parcelles: [] });
@@ -827,7 +843,7 @@ function assistantAnswer(q, camp) {
   }
   if (n.includes('materiel') || n.includes('parc')) return { text: `Valeur estimée du parc matériel : ${eur(sum(S.materiel, m => valeurMateriel(m)))} (${S.materiel.length} équipements). Estimation indicative, hors valeurs saisies manuellement.`, link: 'materiel' };
   if (n.includes('chiffre') || n.includes('vente') || n.includes(' ca ')) return { text: `Chiffre d'affaires réalisé ${campLabel(camp)} : ${eur(E.ca)} (${S.ventes.filter(v => v.campagne === camp).length} ventes). Montant non encore réglé : ${eur(E.impayes)}.`, link: 'ventes' };
-  if (n.includes('surface') || n.includes('hectare')) return { text: `Surface totale : ${surfaceTotale().toLocaleString('fr-FR')} ha sur ${S.parcelles.length} parcelles.\n` + assolement(CURRENT_CAMP).map(a => `${a.label} : ${a.value} ha`).join('\n'), link: 'parcellaire' };
+  if (n.includes('surface') || n.includes('hectare')) return { text: `Surface totale : ${surfaceTotale().toLocaleString('fr-FR')} ha sur ${landParcels().length} parcelles.\n` + assolement(CURRENT_CAMP).map(a => `${a.label} : ${a.value} ha`).join('\n'), link: 'parcellaire' };
   return { text: "Je ne trouve pas de réponse fiable à cette question dans vos données. Essayez par exemple :\n• Quelle est la marge réalisée sur mon blé ?\n• Combien me reste-t-il de tonnes d'orge ?\n• Quel est le coût de mécanisation ?\n• Quelles sont les prochaines opérations d'entretien ?\n• Quelle parcelle a le coût de production le plus élevé ?\n• Combien ai-je dépensé en engrais ?\n• Quelle est la valeur de mon parc matériel ?", none: true };
 }
 
