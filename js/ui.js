@@ -158,10 +158,10 @@ const ROUTES = [
   ['documents', 'Documents', 'file', 'Administration'],
   ['parametres', 'Paramètres', 'settings', 'Administration'],
 ];
-const DEFAULT_WIDGETS = ['categories', 'priorites', 'actions', 'kpis', 'surfaces', 'marges', 'ca', 'charges', 'stocks', 'cours', 'assistant'];
+const DEFAULT_WIDGETS = ['premiers', 'categories', 'priorites', 'cultures', 'actions', 'kpis', 'surfaces', 'marges', 'ca', 'charges', 'stocks', 'cours', 'assistant'];
 /* Couleur de catégorie de chaque module (cohérente avec les catégories de tâches) */
 const MOD_COLOR = { dashboard: 'var(--primary)', taches: 'var(--late)', exploitation: 'var(--c-cult)', parcellaire: 'var(--c-cult)', itk: 'var(--c-cult)', interventions: 'var(--c-cult)', stocks: 'var(--c-stock)', ventes: 'var(--c-vente)', economie: 'var(--c-eco)', materiel: 'var(--c-mat)', pac: 'var(--c-admin)', documents: 'var(--c-doc)', parametres: 'var(--c-set)' };
-const WIDGET_NAMES = { categories: 'Tâches par catégorie', priorites: 'À faire en priorité', actions: 'Actions rapides', kpis: 'Chiffres clés', surfaces: 'Répartition des surfaces', ca: "Évolution du chiffre d'affaires et des charges", marges: 'Marges par culture', charges: 'Répartition des charges', stocks: 'Répartition des stocks', cours: 'Cours agricoles', assistant: 'Assistant (aperçu)' };
+const WIDGET_NAMES = { premiers: 'Premiers pas (nouvelle ferme)', cultures: 'Mes cultures', categories: 'Tâches par catégorie', priorites: 'À faire en priorité', actions: 'Actions rapides', kpis: 'Chiffres clés', surfaces: 'Répartition des surfaces', ca: "Évolution du chiffre d'affaires et des charges", marges: 'Marges par culture', charges: 'Répartition des charges', stocks: 'Répartition des stocks', cours: 'Cours agricoles', assistant: 'Assistant (aperçu)' };
 let PREFS = { theme: 'light', camp: CURRENT_CAMP - 1, widgets: DEFAULT_WIDGETS.map(id => ({ id, on: true })) };
 try { const p = JSON.parse(localStorage.getItem(PREF_KEY) || 'null'); if (p) PREFS = { ...PREFS, ...p }; } catch (e) { }
 PREFS.widgets = PREFS.widgets.filter(w => DEFAULT_WIDGETS.includes(w.id));
@@ -252,6 +252,7 @@ const todoLi = t => taskCard(t);
 const VIEWS = {}; const DRAWERS = {};
 function render() {
   document.documentElement.dataset.theme = PREFS.theme;
+  if (!S.onboarded && typeof renderOnboarding === 'function') { closeDrawer(); closeModal(); renderOnboarding(); return; }
   const app = document.getElementById('app');
   app.innerHTML = shell();
   afterRender();
