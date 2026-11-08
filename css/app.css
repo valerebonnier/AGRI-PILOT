@@ -538,3 +538,53 @@ table.t tfoot td{font-weight:750;border-top:2px solid var(--border);border-botto
 .ob-fam:first-of-type{margin-top:4px}
 .ob-unit b{display:flex;align-items:center;gap:6px}
 .ob-unit b svg.i{width:16px;height:16px}
+
+/* ===== V4 — carte satellite, édition des contours, actions au pouce ===== */
+.hide-all{display:none !important}
+.lmap-wrap{position:relative;z-index:0}
+#lmap{width:100%;height:560px;background:#dfe5dc;border-radius:var(--r);z-index:1}
+.lmap-ctl{position:absolute;z-index:500;display:flex;gap:6px;align-items:center}
+.lmap-ctl.top{top:10px;left:10px;right:60px;flex-wrap:wrap}
+.lmap-ctl.top .seg{background:rgba(255,255,255,.92);box-shadow:var(--shadow-sm)}
+[data-theme=dark] .lmap-ctl.top .seg{background:rgba(20,28,23,.92)}
+.lchip{height:34px;padding:0 12px;border-radius:999px;border:0;background:rgba(255,255,255,.92);font-weight:700;font-size:12.5px;box-shadow:var(--shadow-sm);cursor:pointer;color:#16211A}
+.lchip.on{background:var(--primary);color:#fff}
+.lmap-ctl.rside{right:10px;top:10px;flex-direction:column}
+.lbtn{width:46px;height:46px;border-radius:14px;border:0;background:#fff;color:#16211A;display:grid;place-items:center;box-shadow:0 2px 8px rgba(0,0,0,.25);cursor:pointer}
+.lbtn svg.i{width:21px;height:21px}
+.ptip{background:rgba(255,255,255,.88);border:0;border-radius:8px;box-shadow:none;font-family:var(--font);font-size:11.5px;line-height:1.25;text-align:center;padding:3px 7px;color:#16211A}
+.ptip:before{display:none}
+.vx-h{width:30px;height:30px;border-radius:50%;background:#fff;border:3px solid #FFB800;display:grid;place-items:center;font-size:11px;font-weight:800;color:#16211A;box-shadow:0 2px 6px rgba(0,0,0,.35)}
+.vx-h.sel{background:#FFB800;color:#fff;transform:scale(1.15)}
+.mid-h{width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,.75);border:2px dashed #FFB800;display:grid;place-items:center;font-size:16px;font-weight:800;color:#8a6400}
+.leaflet-container{font-family:var(--font)}
+.edit-panel{background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow-lg);padding:12px;margin-bottom:12px}
+.ep-h{display:flex;gap:10px;align-items:flex-start}
+.ep-h>div:first-child{flex:1;min-width:0}
+.ep-h b{display:block;font-size:15px}
+.ep-h span{display:block;font-size:12px;color:var(--muted)}
+.ep-a{text-align:right}
+.ep-a b{font-size:18px;font-weight:800;color:var(--primary)}
+.ep-b{display:flex;gap:8px;margin-top:10px}
+.ep-b .btn.p{flex:1}
+.pabar{display:none}
+@media (max-width:1023px){
+  #lmap{height:calc(100vh - 330px);min-height:340px;border-radius:14px}
+  .map-card{border-radius:14px}
+  .edit-panel{position:fixed;left:10px;right:10px;bottom:calc(78px + env(safe-area-inset-bottom));z-index:45;margin:0}
+  .pabar{display:flex;position:fixed;left:10px;right:10px;bottom:calc(76px + env(safe-area-inset-bottom));z-index:39;gap:8px;padding:8px;background:color-mix(in srgb,var(--surface) 94%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid var(--border);border-radius:18px;box-shadow:0 10px 30px -10px rgba(10,30,18,.35)}
+  .pabar .btn{flex:1;height:46px;border-radius:12px;font-size:13.5px;padding:0 10px;min-width:0}
+  .pabar .btn span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pabar .btn.icon{flex:none;width:46px}
+  .main.has-pa .content{padding-bottom:calc(170px + env(safe-area-inset-bottom))}
+  .toolbar,.row.wrap.toolbar{flex-wrap:wrap !important;overflow:visible;margin-left:0;margin-right:0;padding-left:0;padding-right:0}
+  .toolbar .search-in{flex:1 1 100%;width:100% !important;min-width:0}
+  .toolbar .seg{max-width:100%;overflow-x:auto;flex-wrap:nowrap}
+  .page-h.toolbar{flex-wrap:wrap !important}
+  .drawer-h{padding-top:calc(14px + env(safe-area-inset-top));min-height:calc(60px + env(safe-area-inset-top))}
+  .drawer-h .btn{width:44px;height:44px}
+  .modal{max-height:calc(100dvh - env(safe-area-inset-top) - 24px)}
+  .search-pop{padding-top:calc(16px + env(safe-area-inset-top))}
+  .top .btn.icon{width:44px;height:44px}
+}
+@media (max-width:1023px){.toast-box{bottom:auto;top:calc(66px + env(safe-area-inset-top))}.toast{pointer-events:none}}

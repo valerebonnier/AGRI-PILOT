@@ -19,3 +19,8 @@ L'application fonctionne hors connexion. Les données sont enregistrées sur l'a
 - `js/ui.js` — icônes, graphiques, navigation, modales
 - `js/views.js` — écrans des modules
 - `sw.js`, `manifest.webmanifest`, `icons/` — installation et hors connexion
+
+## Cartographie
+- Fonds : photographies aériennes et Plan IGN, calques cadastre et îlots PAC (RPG) — services publics de la Géoplateforme IGN (data.geopf.fr), sans clé.
+- Recherche de lieu : API de géocodage de la Géoplateforme.
+- Bibliothèque cartographique : Leaflet 1.9.4 (licence BSD-2, fichiers dans `vendor/leaflet/`).

@@ -169,6 +169,14 @@ DEFAULT_WIDGETS.forEach((id, i) => { if (!PREFS.widgets.find(w => w.id === id)) 
 const savePrefs = () => { try { localStorage.setItem(PREF_KEY, JSON.stringify(PREFS)); } catch (e) { } };
 const UI = { route: 'dashboard', drawer: null, tabs: {}, q: {}, f: {}, notif: false, mapEdit: null, mapDraw: null, mapSel: null, assist: null, customize: false };
 const tab = (k, def) => UI.tabs[k] || def;
+/** Actions de page : boutons dans l'en-tête sur ordinateur, barre fixe en bas (zone du pouce) sur téléphone. */
+function pa(list) { UI._pa = list; return `<span class="only-d row" style="gap:8px">${list.map(x => `<button class="btn ${x.primary ? 'p' : ''}" data-a="${x.a}" ${Object.entries(x.d || {}).map(([k, v]) => `data-${k}="${esc(v)}"`).join(' ')}>${ic(x.i)} ${x.l}</button>`).join('')}</span>`; }
+function paBar() {
+  const list = UI._pa || []; if (!list.length) return '';
+  const main = list.filter(x => !x.more).slice(-3), more = list.filter(x => x.more || !main.includes(x));
+  const btn = x => `<button class="btn ${x.primary ? 'p' : ''}" data-a="${x.a}" ${Object.entries(x.d || {}).map(([k, v]) => `data-${k}="${esc(v)}"`).join(' ')}>${ic(x.i)}<span>${x.l}</span></button>`;
+  return `<div class="pabar">${more.length ? `<button class="btn icon" data-a="paMore" aria-label="Autres actions">${ic('dots')}</button>` : ''}${main.map(btn).join('')}</div>`;
+}
 
 /* ---------- Modale / tiroir / toast ---------- */
 let MODAL = null;
@@ -202,6 +210,7 @@ function shell() {
   const byCat = c => todo.filter(t => t.cat === c && t.urgence !== 'ok').length;
   const cnt = { taches: urgent, interventions: byCat('cultures'), stocks: byCat('stocks'), materiel: byCat('materiel'), ventes: byCat('ventes'), pac: byCat('admin'), documents: byCat('documents') };
   const r = ROUTES.find(x => x[0] === UI.route) || (UI.route === 'plus' ? ['plus', 'Menu'] : ROUTES[0]);
+  UI._pa = []; const content = (VIEWS[UI.route] || VIEWS.dashboard)(); const bar = paBar();
   const isTab = ['dashboard', 'parcellaire', 'taches', 'plus'].includes(UI.route);
   return `
   <aside class="side">
@@ -212,7 +221,7 @@ function shell() {
       <div class="row small muted">${navigator.onLine ? '<i class="dotc" style="background:var(--ok)"></i> En ligne · enregistrement local' : '<i class="dotc" style="background:var(--warn)"></i> Hors ligne · enregistrement local'}</div>
     </div>
   </aside>
-  <div class="main">
+  <div class="main ${bar ? 'has-pa' : ''}">
     <header class="top" id="top">
       ${!isTab ? `<button class="btn g icon back" data-a="back" aria-label="Retour">${ic('chevL')}</button>` : ''}
       <h1>${UI.route === 'dashboard' ? `<span class="only-d">${esc(S.exploitation.nom)}</span><span class="only-m row" style="gap:8px"><span class="brand-logo" style="width:30px;height:30px;border-radius:9px">${ic('leaf')}</span>AGRI PILOT</span>` : r[1]}</h1>
@@ -224,7 +233,8 @@ function shell() {
       <button class="btn icon g hide-m" data-a="theme" title="Mode sombre">${ic(PREFS.theme === 'dark' ? 'sun' : 'moon')}</button>
       <button class="btn p hide-m" data-a="actionSheet">${ic('plus')} Saisir</button>
     </header>
-    <main class="content" id="content">${(VIEWS[UI.route] || VIEWS.dashboard)()}</main>
+    <main class="content" id="content">${content}</main>
+    ${bar}
   </div>
   <nav class="bottom">
     <a href="#dashboard" class="${UI.route === 'dashboard' ? 'on' : ''}">${ic('home')}Accueil</a>
@@ -329,6 +339,7 @@ ACT.openResult = d => {
   const map = { parcelle: ['parcellaire', 'parcelle'], stock: ['stocks', 'stock'], materiel: ['materiel', 'materiel'], vente: ['ventes', 'vente'], document: ['documents', null], intervention: ['interventions', 'intervention'] };
   const [r, k] = map[d.kind]; go(r); if (k) setTimeout(() => openDrawer(k, d.id), 30);
 };
+ACT.paMore = () => { const list = UI._pa || []; const main = list.filter(x => !x.more).slice(-3); openModal({ title: 'Autres actions', body: `<div class="list">${list.filter(x => x.more || !main.includes(x)).map(x => `<div class="mrow" data-a="${x.a}" ${Object.entries(x.d || {}).map(([k, v]) => `data-${k}="${esc(v)}"`).join(' ')}><div class="ic">${ic(x.i)}</div><div class="tx"><b>${x.l}</b></div>${ic('chevR')}</div>`).join('')}</div>`, foot: '' }); };
 ACT.back = () => { if (history.length > 1) history.back(); else go('plus'); };
 ACT.menu = () => go('plus');
 ACT.taskAct = (d, el, e) => {
