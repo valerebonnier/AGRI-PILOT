@@ -2,7 +2,7 @@
 /* =====================================================================
    AGRI PILOT — Interface : icônes, formats, graphiques, structure, routeur
    ===================================================================== */
-const APP_VERSION = '2026.11.08-v19';
+const APP_VERSION = '2026.11.08-v20';
 const ICONS = {
   home: '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>',
   farm: '<path d="M3 21V10l9-6 9 6v11M9 21v-6h6v6M2 21h20"/>',
@@ -272,6 +272,7 @@ function render() {
   document.documentElement.dataset.theme = PREFS.theme;
   if (!S.onboarded && typeof renderOnboarding === 'function') { closeDrawer(); closeModal(); renderOnboarding(); return; }
   const app = document.getElementById('app');
+  app.className = 'app';
   app.innerHTML = shell();
   afterRender();
 }

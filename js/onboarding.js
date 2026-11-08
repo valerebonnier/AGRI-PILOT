@@ -52,14 +52,14 @@ const OB_FAMILLES = [
   ['Fourrages & autres surfaces', ['prairie', 'prairie_t', 'luzerne', 'jachere']],
 ];
 const OB_CULTURES = OB_FAMILLES.flatMap(f => f[1]);
-const OB_STEPS = [['profil', 'Vous'], ['ferme', 'Ma ferme'], ['productions', 'Mes productions'], ['parcelles', 'Mes parcelles'], ['materiel', 'Mon matériel'], ['forfait', 'Mon forfait'], ['options', 'Options'], ['recap', 'C’est prêt']];
+const OB_STEPS = [['profil', 'Vous'], ['ferme', 'Ma ferme'], ['productions', 'Mes productions'], ['repartition', 'Mes surfaces'], ['parcelles', 'Mes parcelles'], ['materiel', 'Mon matériel'], ['forfait', 'Mon forfait'], ['options', 'Options'], ['recap', 'C’est prêt']];
 const obIdx = k => OB_STEPS.findIndex(x => x[0] === k);
 const ROLES_OB = [['exploitant', 'Chef·fe d’exploitation', 'farm'], ['associe', 'Associé·e', 'users'], ['salarie', 'Salarié·e', 'tractor'], ['conseil', 'Conseiller·e / comptable', 'chart']];
 const OB_KEY = 'agripilot.onboarding.v3';
 let OB = null;
 function obLoad() {
-  try { const d = JSON.parse(localStorage.getItem(OB_KEY) || 'null'); if (d && d.v === 3) { OB = d; return; } } catch (e) { }
-  OB = { v: 3, step: -1, nom: '', prenom: '', nomFam: '', role: 'exploitant', email: '', tel: '', siret: '', pacage: '', forme: 'EARL', dept: '', cultures: [], parcelles: [], materiel: {}, genTasks: true, plan: null, cycle: 'annuel', options: [] };
+  try { const d = JSON.parse(localStorage.getItem(OB_KEY) || 'null'); if (d && d.v === 3) { OB = d; OB.rep = OB.rep || {}; return; } } catch (e) { }
+  OB = { v: 3, step: -1, nom: '', prenom: '', nomFam: '', role: 'exploitant', email: '', tel: '', siret: '', pacage: '', forme: 'EARL', dept: '', cultures: [], rep: {}, parcelles: [], materiel: {}, genTasks: true, plan: null, cycle: 'annuel', options: [] };
 }
 function obSave() { try { localStorage.setItem(OB_KEY, JSON.stringify(OB)); } catch (e) { } }
 function obValid(step) {
@@ -68,7 +68,8 @@ function obValid(step) {
   if (k === 'forfait') return OB.plan ? '' : 'Choisissez un forfait';
   if (k === 'ferme') return OB.nom.trim().length >= 2 && !!OB.dept ? '' : 'Indiquez le nom de la ferme et le département';
   if (k === 'productions') return OB.cultures.length ? '' : 'Choisissez au moins une production';
-  if (k === 'parcelles') return OB.parcelles.length && OB.parcelles.every(p => p.nom.trim() && p.surface > 0 && p.culture) ? '' : 'Ajoutez au moins une parcelle avec sa surface';
+  if (k === 'repartition') return OB.cultures.every(c => OB.rep[c] > 0) ? '' : 'Indiquez une surface pour chaque culture';
+  if (k === 'parcelles') return OB.parcelles.every(p => p.nom.trim() && p.surface > 0 && p.culture) ? '' : 'Chaque parcelle doit avoir un nom et une surface';
   return '';
 }
 const obSurf = () => r2(sum(OB.parcelles, p => p.surface), 2);
@@ -80,13 +81,14 @@ function renderOnboarding() {
   if (OB.step < 0) { renderWelcome(); return; }
   if (OB_STEPS[OB.step][0] === 'forfait' && !OB.plan) OB.plan = planReco();
   const step = OB.step, key = OB_STEPS[step][0], err = obValid(step);
-  const body = { profil: obProfil, ferme: obFerme, productions: obProductions, parcelles: obParcelles, materiel: obMateriel, forfait: obForfait, options: obOptions, recap: obRecap }[key]();
+  const body = { profil: obProfil, ferme: obFerme, productions: obProductions, repartition: obRepartition, parcelles: obParcelles, materiel: obMateriel, forfait: obForfait, options: obOptions, recap: obRecap }[key]();
+  document.getElementById('app').className = 'app ob-mode';
   document.getElementById('app').innerHTML = `<div class="ob">
     <header class="ob-top"><div class="row"><span class="brand-logo" style="width:32px;height:32px;border-radius:10px">${ic('leaf')}</span><b>AGRI PILOT</b><span class="sp"></span><span class="small muted b">${esc(OB_STEPS[step][1])} · ${step + 1}/${OB_STEPS.length}</span></div>
       <div class="ob-prog">${OB_STEPS.map((s, i) => `<i class="${i < step ? 'done' : i === step ? 'on' : ''}"></i>`).join('')}</div></header>
     <main class="ob-body">${body}</main>
-    <footer class="ob-foot"><button class="btn" data-a="obPrev" aria-label="Retour">${ic('chevL')}</button>${key === 'options' ? `<div class="ob-tot"><small>Après l’essai</small><b>${eur2(aboTotal({ plan: OB.plan, cycle: OB.cycle, options: OB.options }))}<span>/mois HT</span></b></div>` : ''}
-      ${key === 'materiel' && !matUnits().length ? `<button class="btn ob-next" data-a="obNext">Je le ferai plus tard ${ic('chevR')}</button>` : key === 'recap' ? `<button class="btn p ob-next" data-a="obFinish">${ic('check')} Démarrer AGRI PILOT</button>` : `<button class="btn p ob-next" data-a="obNext" ${err ? 'disabled' : ''}>Continuer ${ic('chevR')}</button>`}</footer>
+    <footer class="ob-foot"><button class="btn" data-a="obPrev" aria-label="Retour">${ic('chevL')}</button>${key === 'options' ? `<div class="ob-tot"><small>Après l’essai</small><b>${eur2(aboTotal({ plan: OB.plan, cycle: OB.cycle, options: OB.options }))}<span>${perLbl(OB.cycle)}</span></b></div>` : ''}
+      ${(key === 'materiel' && !matUnits().length) || (key === 'parcelles' && !OB.parcelles.length) ? `<button class="btn ob-next" data-a="obNext">Je le ferai plus tard ${ic('chevR')}</button>` : key === 'recap' ? `<button class="btn p ob-next" data-a="obFinish">${ic('check')} Démarrer AGRI PILOT</button>` : `<button class="btn p ob-next" data-a="obNext" ${err ? 'disabled' : ''}>Continuer ${ic('chevR')}</button>`}</footer>
     ${err && key !== 'materiel' && key !== 'recap' ? `<div class="ob-hint">${esc(err)}</div>` : ''}
   </div>`;
 }
@@ -118,23 +120,40 @@ function obProductions() {
 }
 ACT.obCult = d => {
   const i = OB.cultures.indexOf(d.k);
-  if (i >= 0) { OB.cultures.splice(i, 1); OB.parcelles = OB.parcelles.filter(p => p.culture !== d.k); } else OB.cultures.push(d.k);
+  if (i >= 0) { OB.cultures.splice(i, 1); delete OB.rep[d.k]; OB.parcelles = OB.parcelles.filter(p => p.culture !== d.k); } else OB.cultures.push(d.k);
   obSave(); obRerender();
 };
 
 /* ---- Étape 3 : parcelles ---- */
+const obRepTot = () => r2(sum(OB.cultures, c => +OB.rep[c] || 0), 2);
+/* ---- Étape : répartition des surfaces ---- */
+function obRepartition() {
+  const tot = obRepTot();
+  return `<h1 class="ob-h">Vos surfaces ${campLabel(CURRENT_CAMP)}</h1><p class="ob-p">Combien d’hectares pour chaque culture cette campagne ? Vous placerez ces surfaces sur vos parcelles à l’étape suivante… ou plus tard.</p>
+  <div class="rep-tot"><div><b id="repTot">${nf(tot, 1)}</b><span>ha au total</span></div><div class="zbar rep-bar">${OB.cultures.map(c => `<i style="flex:${+OB.rep[c] || 0};background:${CULTURES[c].color}"></i>`).join('')}</div></div>
+  ${OB.cultures.map(c => { const v = +OB.rep[c] || 0; return `<div class="rep-row" style="--c:${CULTURES[c].color}"><div class="row"><span class="sw"></span><b>${CULTURES[c].nom}</b><span class="sp"></span><span class="rep-pc">${tot ? Math.round(v / tot * 100) : 0} %</span></div>
+    <div class="row mt" style="gap:8px;flex-wrap:wrap"><div class="stepper"><button data-a="obRepS" data-k="${c}" data-d="-5">${ic('minus')}</button><input inputmode="decimal" data-in="obRep" data-k="${c}" value="${v ? String(v).replace('.', ',') : ''}" placeholder="0" aria-label="Hectares de ${esc(CULTURES[c].nom)}"><span>ha</span><button data-a="obRepS" data-k="${c}" data-d="5">${ic('plus')}</button></div>
+    <div class="ob-quick" style="margin:0">${[10, 20, 50, 100].map(x => `<button class="${v === x ? 'on' : ''}" data-a="obRepQ" data-k="${c}" data-v="${x}">${x}</button>`).join('')}</div></div></div>`; }).join('')}
+  <div class="note mt">${ic('info')}<span>Ces surfaces deviennent votre plan d’assolement (menu Assolement). Ce qui n’est pas encore placé sur une parcelle reste compté « sans parcelle ».</span></div>`;
+}
+ACT.obRepS = d => { OB.rep[d.k] = Math.max(0, r2((+OB.rep[d.k] || 0) + (+d.d), 2)); obSave(); obRerender(); };
+ACT.obRepQ = d => { OB.rep[d.k] = +d.v; obSave(); obRerender(); };
+IN.obRep = el => { const v = parseFloat(el.value.replace(',', '.')); OB.rep[el.dataset.k] = v > 0 ? r2(v, 2) : 0; obSave(); const t = document.getElementById('repTot'); if (t) t.textContent = nf(obRepTot(), 1); const btn = document.querySelector('.ob-next'); const e = obValid(OB.step); if (btn) btn.disabled = !!e; const h = document.querySelector('.ob-hint'); if (h) h.style.display = e ? '' : 'none'; };
+
+/* ---- Étape : parcelles ---- */
 function obParcelles() {
-  return `<h1 class="ob-h">Vos parcelles</h1><p class="ob-p">Touchez une culture pour ajouter une parcelle, puis ajustez la surface avec − / +. Les contours pourront être dessinés ou importés plus tard.</p>
-  <div class="ob-sum"><div><b>${nf(obSurf(), 1)} ha</b><span>surface totale</span></div><div><b>${OB.parcelles.length}</b><span>parcelle(s)</span></div></div>
-  <div class="field"><span>Ajouter une parcelle de…</span><div class="ob-chips">${OB.cultures.map(k => `<button class="fchip" style="--c:${CULTURES[k].color}" data-a="obAddP" data-k="${k}"><span class="cat-dot" style="--c:${CULTURES[k].color}"></span>${ic('plus')} ${CULTURES[k].nom}</button>`).join('')}</div></div>
+  const placed = c => r2(sum(OB.parcelles.filter(p => p.culture === c), p => p.surface), 2);
+  return `<h1 class="ob-h">Vos parcelles</h1><p class="ob-p">Placez vos surfaces sur des parcelles : touchez « + Parcelle » sous une culture, puis donnez-lui un nom. Les contours se dessineront plus tard sur la carte.</p>
+  <div class="ob-sum"><div><b>${nf(obSurf(), 1)} / ${nf(obRepTot(), 1)} ha</b><span>placés sur des parcelles</span></div><div><b>${OB.parcelles.length}</b><span>parcelle(s)</span></div></div>
+  <div class="rep-place">${OB.cultures.map(c => { const plan = +OB.rep[c] || 0, pl = placed(c), rest = r2(plan - pl, 2); return `<div class="rp" style="--c:${CULTURES[c].color}"><div class="row"><span class="sw"></span><b>${CULTURES[c].nom}</b><span class="sp"></span><span class="rp-n ${rest < -0.01 ? 'over' : rest < 0.01 ? 'ok' : ''}">${rest > 0.01 ? `${nf(rest, 1)} ha à placer` : rest < -0.01 ? `${nf(-rest, 1)} ha en plus` : `${ic('check')} tout placé`}</span></div><div class="rp-bar"><i style="width:${plan ? Math.min(100, pl / plan * 100) : 0}%"></i></div><button class="btn sm" data-a="obAddP" data-k="${c}">${ic('plus')} Parcelle${rest > 0.01 ? ` de ${nf(rest, 1)} ha` : ''}</button></div>`; }).join('')}</div>
   <div class="mt">${OB.parcelles.map((p, i) => `<div class="ob-parc" style="--c:${CULTURES[p.culture]?.color}">
     <div class="row" style="gap:8px"><span class="cat-dot" style="--c:${CULTURES[p.culture]?.color}"></span><input class="inp ob-name" data-in="obPN" data-i="${i}" value="${esc(p.nom)}" aria-label="Nom de la parcelle"><button class="btn icon g sm" data-a="obDelP" data-i="${i}" aria-label="Supprimer">${ic('trash')}</button></div>
     <div class="row mt" style="gap:8px;flex-wrap:wrap"><select class="inp" style="flex:1;min-width:140px;height:42px" data-ch="obPC" data-i="${i}">${OB.cultures.map(k => `<option value="${k}" ${p.culture === k ? 'selected' : ''}>${CULTURES[k].nom}</option>`).join('')}</select>
       <div class="stepper"><button data-a="obStep" data-i="${i}" data-d="-1">${ic('minus')}</button><input inputmode="decimal" data-in="obPS" data-i="${i}" value="${String(p.surface).replace('.', ',')}" aria-label="Surface en hectares"><span>ha</span><button data-a="obStep" data-i="${i}" data-d="1">${ic('plus')}</button></div></div>
     <div class="ob-quick">${[2, 5, 10, 15, 20, 30].map(v => `<button class="${p.surface === v ? 'on' : ''}" data-a="obQS" data-i="${i}" data-v="${v}">${v} ha</button>`).join('')}</div>
-  </div>`).join('') || `<div class="card empty">Aucune parcelle pour l’instant : touchez une culture ci-dessus.</div>`}</div>`;
+  </div>`).join('') || `<div class="card empty">Aucune parcelle pour l’instant. Vous pouvez aussi passer cette étape : vos surfaces resteront dans le plan d’assolement.</div>`}</div>`;
 }
-ACT.obAddP = d => { const n = OB.parcelles.length + 1; OB.parcelles.push({ nom: `Parcelle ${n}`, culture: d.k, surface: 10 }); obSave(); obRerender(); setTimeout(() => { const b = document.querySelector('.ob-body'); b && b.scrollTo({ top: b.scrollHeight, behavior: 'smooth' }); }, 30); };
+ACT.obAddP = d => { const n = OB.parcelles.length + 1; const rest = r2((+OB.rep[d.k] || 0) - sum(OB.parcelles.filter(p => p.culture === d.k), p => p.surface), 2); OB.parcelles.push({ nom: `Parcelle ${n}`, culture: d.k, surface: rest > 0 ? rest : 10 }); obSave(); obRerender(); setTimeout(() => { const b = document.querySelector('.ob-body'); b && b.scrollTo({ top: b.scrollHeight, behavior: 'smooth' }); }, 30); };
 ACT.obDelP = d => { OB.parcelles.splice(+d.i, 1); obSave(); obRerender(); };
 ACT.obStep = d => { const p = OB.parcelles[+d.i]; p.surface = Math.max(0.5, r2(p.surface + (+d.d), 2)); obSave(); obRerender(); };
 ACT.obQS = d => { OB.parcelles[+d.i].surface = +d.v; obSave(); obRerender(); };
@@ -163,7 +182,8 @@ function obRecap() {
   const byC = OB.cultures.map(k => ({ k, s: sum(OB.parcelles.filter(p => p.culture === k), p => p.surface), n: OB.parcelles.filter(p => p.culture === k).length })).filter(x => x.n);
   return `<h1 class="ob-h">Tout est prêt${OB.prenom ? ', ' + esc(OB.prenom) : ''} !</h1><p class="ob-p">Vérifiez le récapitulatif. Vous pourrez tout compléter ensuite.</p>
   <div class="card"><div class="mrow" data-a="obGo" data-s="${obIdx('ferme')}"><div class="ic">${ic('farm')}</div><div class="tx"><b>${esc(OB.nom)}</b><span>${esc(OB.forme)} · ${esc(OB.dept)}</span></div>${ic('edit')}</div>
-  <div class="mrow" data-a="obGo" data-s="${obIdx('parcelles')}" style="--c:var(--c-cult)"><div class="ic">${ic('map')}</div><div class="tx"><b>${OB.parcelles.length} parcelle(s) · ${nf(obSurf(), 1)} ha</b><span>${byC.map(x => `${CULTURES[x.k].nom} ${nf(x.s, 1)} ha`).join(' · ')}</span></div>${ic('edit')}</div>
+  <div class="mrow" data-a="obGo" data-s="${obIdx('repartition')}" style="--c:var(--c-cult)"><div class="ic">${ic('layers')}</div><div class="tx"><b>Assolement ${campLabel(CURRENT_CAMP)} · ${nf(obRepTot(), 1)} ha</b><span>${OB.cultures.map(c => `${CULTURES[c].nom} ${nf(+OB.rep[c] || 0, 1)} ha`).join(' · ')}</span></div>${ic('edit')}</div>
+  <div class="mrow" data-a="obGo" data-s="${obIdx('parcelles')}" style="--c:var(--c-cult)"><div class="ic">${ic('map')}</div><div class="tx"><b>${OB.parcelles.length} parcelle(s) · ${nf(obSurf(), 1)} ha placés</b><span>${byC.map(x => `${CULTURES[x.k].nom} ${nf(x.s, 1)} ha`).join(' · ') || 'Parcelles à créer plus tard'}</span></div>${ic('edit')}</div>
   <div class="mrow" data-a="obGo" data-s="${obIdx('materiel')}" style="--c:var(--c-mat)"><div class="ic">${ic('tractor')}</div><div class="tx"><b>${matUnits().length} matériel(s)</b><span>${matUnits().map(u => MAT_PRESETS[u.k].label).join(', ') || 'À ajouter plus tard'}</span></div>${ic('edit')}</div></div>
   <div class="card mt"><div class="mrow" data-a="obGo" data-s="${obIdx('forfait')}" style="--c:var(--primary)"><div class="ic">${ic('star')}</div><div class="tx"><b>Forfait ${esc(PLANS[OB.plan]?.nom || '—')} · ${OB.cycle === 'annuel' ? 'annuel' : 'mensuel'}</b><span>${OB.options.length ? OB.options.map(o => OPTIONS[o]?.nom).join(', ') : 'Sans option'} · essai gratuit ${ESSAI_J} jours</span></div>${ic('edit')}</div></div>
   <div class="card mt"><div class="mrow" data-a="obToggle" style="--c:var(--c-cult)"><div class="ic">${ic('calendar')}</div><div class="tx" style="white-space:normal"><b>Préparer mon calendrier de travaux</b><span style="white-space:normal">Crée les prochaines interventions à partir des itinéraires types (à partir d’aujourd’hui, rien n’est daté dans le passé).</span></div><button class="switch ${OB.genTasks ? 'on' : ''}" tabindex="-1"></button></div></div>
@@ -176,7 +196,7 @@ ACT.obNext = () => { const e = obValid(OB.step); if (e) { toast(e, 'warn'); retu
 
 /** Création de la ferme à partir des réponses. */
 ACT.obFinish = () => {
-  for (const i of ['profil', 'ferme', 'productions', 'parcelles', 'forfait'].map(obIdx)) { const e = obValid(i); if (e) { OB.step = i; obSave(); renderOnboarding(); toast(e, 'warn'); return; } }
+  for (const i of ['profil', 'ferme', 'productions', 'repartition', 'parcelles', 'forfait'].map(obIdx)) { const e = obValid(i); if (e) { OB.step = i; obSave(); renderOnboarding(); toast(e, 'warn'); return; } }
   const tpl = seedDemo(); // catalogue d'intrants et itinéraires types (aucune donnée de démo conservée)
   const stock = tpl.stock.filter(s => s.cat !== 'production').map(s => ({ ...s, qte: 0, lot: '', fournisseur: '', dateEntree: TODAY, seuil: 0 }));
   const materiel = [];
@@ -203,6 +223,7 @@ ACT.obFinish = () => {
     exploitation: { nom: OB.nom.trim(), forme: OB.forme, siret: OB.siret.trim(), pacage: OB.pacage.trim(), exploitant: `${OB.prenom.trim()} ${OB.nomFam.trim()}`.trim(), adresse: '', departement: OB.dept, telephone: OB.tel.trim(), email: OB.email.trim(), certification: '', mainOeuvre: [{ nom: `${OB.prenom.trim()} ${OB.nomFam.trim()}`.trim() || 'Exploitant', role: ROLES_OB.find(r => r[0] === OB.role)?.[1].replace('·e', '').replace('·fe', '') || 'Exploitant', taux: 0 }] },
     users: [{ id: 'u1', nom: `${OB.prenom.trim()} ${OB.nomFam.trim()}`.trim() || 'Administrateur', email: OB.email.trim(), role: 'Administrateur' }],
     profil: { prenom: OB.prenom.trim(), nom: OB.nomFam.trim(), role: OB.role, email: OB.email.trim(), tel: OB.tel.trim() },
+    assolPlan: { [CURRENT_CAMP]: Object.fromEntries(OB.cultures.map(c => [c, +OB.rep[c] || 0])) },
     abonnement: { plan: OB.plan, cycle: OB.cycle, options: [...OB.options], debut: TODAY, finEssai: addDays(TODAY, ESSAI_J) },
     parcelles, interventions: [], stock, mouvements: [], ventes: [], charges: [], materiel,
     cours: Object.fromEntries(Object.entries(tpl.cours).map(([k, c]) => [k, { nom: c.nom, unite: c.unite, source: 'Aucune source — saisissez vos prix', type: 'manuel', points: [], manuels: [] }])),
@@ -229,21 +250,23 @@ const ESSAI_J = 30;
 const eur2 = v => `${nf(v, v % 1 ? 2 : 0)} €`;
 const PLANS = {
   decouverte: { nom: 'Découverte', prix: 0, accroche: 'Pour démarrer', color: '#5B6B7A', limite: 'Jusqu’à 30 ha · 1 utilisateur', modules: ['dashboard', 'taches', 'exploitation', 'parcellaire', 'itk', 'interventions', 'stocks', 'documents', 'parametres'], points: ['Carte satellite et parcellaire', 'Interventions et itinéraires', 'Stocks d’intrants', 'Tâches et rappels'] },
-  essentiel: { nom: 'Essentiel', prix: 19, accroche: 'Le plus choisi', color: '#1C6A47', limite: 'Surface illimitée · 3 utilisateurs', modules: ['assolement', 'materiel', 'ventes', 'economie', 'pac'], points: ['Tout Découverte', 'Assolement et mouvements de terres', 'Parc matériel et entretiens', 'Ventes, achats, marges et coûts', 'Préparation PAC'] },
-  pro: { nom: 'Pro', prix: 39, accroche: 'Pour les équipes', color: '#7A5BD6', limite: 'Surface et utilisateurs illimités', modules: ['equipe'], points: ['Tout Essentiel', 'Main-d’œuvre et planning des salariés', 'Toutes les options incluses*', 'Assistance prioritaire'] },
+  essentiel: { nom: 'Essentiel', prix: 20, accroche: 'Le plus choisi', color: '#1C6A47', limite: 'Surface illimitée · 3 utilisateurs', modules: ['assolement', 'materiel', 'ventes', 'economie', 'pac'], points: ['Tout Découverte', 'Assolement et mouvements de terres', 'Parc matériel et entretiens', 'Ventes, achats, marges et coûts', 'Préparation PAC'] },
+  pro: { nom: 'Pro', prix: 40, accroche: 'Pour les équipes', color: '#7A5BD6', limite: 'Surface et utilisateurs illimités', modules: ['equipe'], points: ['Tout Essentiel', 'Main-d’œuvre et planning des salariés', 'Toutes les options incluses*', 'Assistance prioritaire'] },
 };
 const PLAN_ORDER = ['decouverte', 'essentiel', 'pro'];
 const OPTIONS = {
-  equipe: { nom: 'Main-d’œuvre et planning', desc: 'Horaires, absences, affectation des tâches aux salariés', prix: 8, icon: 'users', modules: ['equipe'], inPro: true },
+  equipe: { nom: 'Main-d’œuvre et planning', desc: 'Horaires, absences, affectation des tâches aux salariés', prix: 10, icon: 'users', modules: ['equipe'], inPro: true },
   tracabilite: { nom: 'Traçabilité renforcée', desc: 'Lots, registre phytosanitaire et exports de contrôle', prix: 5, icon: 'clipboard', inPro: true, bientot: true },
-  cloud: { nom: 'Sauvegarde en ligne et multi-appareils', desc: 'Vos données synchronisées sur téléphone, tablette et ordinateur', prix: 4, icon: 'upload', inPro: true, bientot: true },
-  ia: { nom: 'Assistant IA', desc: 'Posez vos questions sur vos données en langage courant', prix: 9, icon: 'sparkles', inPro: true, bientot: true },
-  accomp: { nom: 'Prise en main accompagnée', desc: '1 h en visio avec un conseiller pour paramétrer votre ferme', prix: 49, unique: true, icon: 'clock' },
+  cloud: { nom: 'Sauvegarde en ligne et multi-appareils', desc: 'Vos données synchronisées sur téléphone, tablette et ordinateur', prix: 5, icon: 'upload', inPro: true, bientot: true },
+  ia: { nom: 'Assistant IA', desc: 'Posez vos questions sur vos données en langage courant', prix: 10, icon: 'sparkles', inPro: true, bientot: true },
+  accomp: { nom: 'Prise en main accompagnée', desc: '1 h en visio avec un conseiller pour paramétrer votre ferme', prix: 50, unique: true, icon: 'clock' },
 };
 const planRank = k => PLAN_ORDER.indexOf(k);
-const planReco = () => { const ha = obSurf(), mats = matUnits().length; return ha > 30 || mats > 2 ? 'essentiel' : 'decouverte'; };
-const planPrix = (k, cycle) => { const p = PLANS[k]?.prix || 0; return cycle === 'annuel' ? r2(p * 10 / 12, 2) : p; };
-function aboTotal(a) { if (!a?.plan) return 0; return r2(planPrix(a.plan, a.cycle) + sum((a.options || []).filter(o => OPTIONS[o] && !OPTIONS[o].unique && !OPTIONS[o].bientot && !(a.plan === 'pro' && OPTIONS[o].inPro)), o => a.cycle === 'annuel' ? OPTIONS[o].prix * 10 / 12 : OPTIONS[o].prix), 2); }
+const planReco = () => { const ha = Math.max(obSurf(), obRepTot()), mats = matUnits().length; return ha > 30 || mats > 2 ? 'essentiel' : 'decouverte'; };
+/** Prix par période : mensuel, ou annuel = 10 mois (2 mois offerts). Toujours des montants ronds. */
+const planPrix = (k, cycle) => { const p = PLANS[k]?.prix || 0; return cycle === 'annuel' ? p * 10 : p; };
+const perLbl = cycle => cycle === 'annuel' ? '/an HT' : '/mois HT';
+function aboTotal(a) { if (!a?.plan) return 0; return r2(planPrix(a.plan, a.cycle) + sum((a.options || []).filter(o => OPTIONS[o] && !OPTIONS[o].unique && !OPTIONS[o].bientot && !(a.plan === 'pro' && OPTIONS[o].inPro)), o => a.cycle === 'annuel' ? OPTIONS[o].prix * 10 : OPTIONS[o].prix), 2); }
 const abo = () => S.abonnement || { plan: 'pro', cycle: 'annuel', options: [], debut: TODAY, finEssai: addDays(TODAY, ESSAI_J), implicite: true };
 const enEssai = () => { const a = abo(); return !a.paye && TODAY <= a.finEssai; };
 /** Accès à un module : pendant l'essai tout est ouvert ; ensuite selon le forfait et les options. */
@@ -252,20 +275,48 @@ const hasRoute = route => S.demo || enEssai() || moduleInclus(route);
 const planOfRoute = r => PLAN_ORDER.find(k => PLANS[k].modules.includes(r));
 
 /* ---- Écran d'accueil ---- */
+/** Illustration originale (SVG) : paysage agricole au lever du jour. */
+const HERO_SVG = `<svg class="wel-ill" viewBox="0 0 400 230" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Illustration : champs cultivés, tracteur et ferme">
+<defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#CFE8DA"/><stop offset=".7" stop-color="#F6EBCB"/></linearGradient>
+<linearGradient id="f1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#E7C25A"/><stop offset="1" stop-color="#D4A23A"/></linearGradient>
+<linearGradient id="f2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7DBA6B"/><stop offset="1" stop-color="#3F8F55"/></linearGradient>
+<linearGradient id="f3" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#C79A66"/><stop offset="1" stop-color="#A2744A"/></linearGradient></defs>
+<rect width="400" height="230" fill="url(#sky)"/>
+<circle cx="318" cy="62" r="26" fill="#F7D774"/><circle cx="318" cy="62" r="40" fill="#F7D774" opacity=".25"/>
+<path d="M290 40c6-4 12-4 16 0M270 54c5-3 10-3 13 0" stroke="#5B6B7A" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+<path d="M0 120 C60 92 120 104 170 112 C230 120 280 94 400 106 L400 140 L0 140Z" fill="#A9CFA0"/>
+<path d="M0 132 C80 114 160 128 230 124 C300 120 350 112 400 118 L400 150 L0 150Z" fill="#8DBE84"/>
+<g transform="translate(36 88)"><rect x="0" y="22" width="44" height="30" fill="#B5473A"/><path d="M-4 24 L22 4 L48 24Z" fill="#8E3328"/><rect x="16" y="34" width="12" height="18" fill="#F3E3C8"/><path d="M16 34 L28 52 M28 34 L16 52" stroke="#B5473A" stroke-width="1.5"/><rect x="50" y="10" width="12" height="42" rx="6" fill="#D9D3C4"/><rect x="50" y="10" width="12" height="8" rx="4" fill="#B8B0A0"/></g>
+<g transform="translate(350 96)"><rect x="-2" y="18" width="4" height="22" fill="#6B4E31"/><circle cx="0" cy="12" r="16" fill="#4F8F5A"/><circle cx="-9" cy="18" r="10" fill="#5FA068"/></g>
+<path d="M0 150 L400 140 L400 230 L0 230Z" fill="url(#f2)"/>
+<path d="M0 166 L400 150 L400 230 L0 230Z" fill="url(#f1)"/>
+<path d="M0 196 L400 176 L400 230 L0 230Z" fill="url(#f3)"/>
+<g stroke="#ffffff" stroke-opacity=".28" stroke-width="2">${[...Array(9)].map((_, i) => `<path d="M${i * 50 - 20} 230 L${180 + i * 16} 152"/>`).join('')}</g>
+<g transform="translate(206 150)"><rect x="-6" y="6" width="48" height="5" rx="2" fill="#5A4430" opacity=".35"/><rect x="2" y="-14" width="22" height="16" rx="3" fill="#2E7D4F"/><rect x="5" y="-26" width="15" height="14" rx="2" fill="#E9F2EC" stroke="#2E7D4F" stroke-width="2.5"/><rect x="20" y="-6" width="20" height="9" rx="2" fill="#2E7D4F"/><rect x="34" y="-14" width="3" height="9" fill="#444"/><circle cx="10" cy="5" r="9" fill="#2A2A2A"/><circle cx="10" cy="5" r="4" fill="#E7C25A"/><circle cx="35" cy="7" r="5.5" fill="#2A2A2A"/><circle cx="35" cy="7" r="2.4" fill="#E7C25A"/><rect x="-30" y="-2" width="28" height="7" rx="2" fill="#B5473A"/><path d="M-28 5 L-28 11 M-21 5 L-21 11 M-14 5 L-14 11 M-7 5 L-7 11" stroke="#555" stroke-width="2"/></g>
+</svg>`;
 const WELCOME = [
-  ['map', 'var(--c-cult)', 'Toute votre ferme dans la poche', 'Parcelles sur la carte satellite, cultures, stades : vous voyez où en est chaque champ.'],
-  ['sprout', 'var(--c-stock)', 'Saisie en trois gestes', 'Un semis, un traitement, une récolte : les stocks et les coûts se mettent à jour tout seuls.'],
-  ['chart', 'var(--c-eco)', 'Gardez le cap', 'Tâches du jour, entretien du matériel, marges par culture : l’essentiel au même endroit.'],
+  ['map', 'var(--c-cult)', 'Votre ferme sur la carte', 'Parcelles sur la vue satellite, cultures et stades d’un coup d’œil.'],
+  ['sprout', 'var(--c-stock)', 'Saisie en trois gestes', 'Semis, traitement, récolte : stocks et coûts se mettent à jour seuls.'],
+  ['tractor', 'var(--c-mat)', 'Matériel suivi', 'Compteurs, entretiens à prévoir, pannes : rien n’est oublié.'],
+  ['chart', 'var(--c-eco)', 'Gardez le cap', 'Tâches du jour, marges par culture, préparation PAC.'],
 ];
 function renderWelcome() {
-  document.getElementById('app').innerHTML = `<div class="wel">
-    <div class="wel-top"><span class="wel-logo">${ic('leaf')}</span><b>AGRI PILOT</b></div>
-    <div class="wel-slides" id="welS">${WELCOME.map(([i, c, t, d]) => `<section class="wel-s"><div class="wel-art" style="--c:${c}"><span class="r1"></span><span class="r2"></span><span class="ic">${ic(i)}</span></div><h1>${t}</h1><p>${d}</p></section>`).join('')}</div>
-    <div class="wel-dots">${WELCOME.map((_, i) => `<i class="${i ? '' : 'on'}"></i>`).join('')}</div>
-    <div class="wel-cta"><button class="btn p wel-go" data-a="obStart">Configurer ma ferme ${ic('chevR')}</button><small>Environ 5 minutes · essai gratuit ${ESSAI_J} jours · sans carte bancaire</small>
-      <div class="wel-alt"><button class="lnk" data-a="obDemo">${ic('sparkles')} Explorer une ferme de démo</button><button class="lnk" data-a="importAll">${ic('upload')} Restaurer une sauvegarde</button></div></div>
+  const app = document.getElementById('app'); app.className = 'app ob-mode';
+  app.innerHTML = `<div class="wel">
+    <div class="wel-hero">${HERO_SVG}<div class="wel-top"><span class="wel-logo">${ic('leaf')}</span><b>AGRI PILOT</b></div></div>
+    <div class="wel-main">
+      <h1 class="wel-h">Pilotez votre exploitation,<br>simplement.</h1>
+      <div class="wel-slides" id="welS">${WELCOME.map(([i, c, t, d]) => `<section class="wel-s" style="--c:${c}"><span class="ic">${ic(i)}</span><b>${t}</b><p>${d}</p></section>`).join('')}</div>
+      <div class="wel-dots">${WELCOME.map((_, i) => `<i class="${i ? '' : 'on'}"></i>`).join('')}</div>
+      <div class="wel-h2">Commencer l’essai gratuit</div>
+      <div class="wel-choice">
+        <button class="wc wc-main" data-a="obStart"><span class="ic">${ic('farm')}</span><span class="tx"><b>Configurer ma ferme</b><small>5 minutes · ${ESSAI_J} jours gratuits · sans carte bancaire</small></span>${ic('chevR')}</button>
+        <button class="wc" data-a="obDemo"><span class="ic">${ic('sparkles')}</span><span class="tx"><b>Essayer avec une ferme de démo</b><small>Une exploitation fictive déjà remplie, à explorer librement</small></span>${ic('chevR')}</button>
+      </div>
+      <button class="lnk wel-rest" data-a="importAll">${ic('upload')} J’ai une sauvegarde à restaurer</button>
+    </div>
   </div>`;
-  const sl = document.getElementById('welS'); sl.addEventListener('scroll', () => { const k = Math.round(sl.scrollLeft / sl.clientWidth); document.querySelectorAll('.wel-dots i').forEach((d, i) => d.classList.toggle('on', i === k)); }, { passive: true });
+  const sl = document.getElementById('welS'); sl.addEventListener('scroll', () => { const w = sl.firstElementChild?.offsetWidth || 1; const k = Math.round(sl.scrollLeft / (w + 10)); document.querySelectorAll('.wel-dots i').forEach((d, i) => d.classList.toggle('on', i === Math.min(k, WELCOME.length - 1))); }, { passive: true });
 }
 ACT.obStart = () => { OB.step = 0; obSave(); renderOnboarding(); window.scrollTo(0, 0); };
 
@@ -281,20 +332,20 @@ function obProfil() {
 /* ---- Étape : forfait ---- */
 function planCards(sel, cycle, reco, act = 'obPlan') {
   return `<div class="cyc"><button class="${cycle === 'mensuel' ? 'on' : ''}" data-a="${act}Cyc" data-v="mensuel">Mensuel</button><button class="${cycle === 'annuel' ? 'on' : ''}" data-a="${act}Cyc" data-v="annuel">Annuel <em>2 mois offerts</em></button></div>
-  <div class="plans">${PLAN_ORDER.map(k => { const p = PLANS[k], px = planPrix(k, cycle); return `<button class="plan ${sel === k ? 'on' : ''}" style="--c:${p.color}" data-a="${act}" data-v="${k}">${k === reco ? '<span class="plan-reco">Recommandé pour vous</span>' : ''}<div class="plan-h"><span class="plan-rad"></span><b>${p.nom}</b><span class="sp"></span><span class="plan-px">${px ? `<b>${nf(px, px % 1 ? 2 : 0)} €</b><small>/mois HT</small>` : '<b>Gratuit</b>'}</span></div><div class="plan-l">${p.limite}${cycle === 'annuel' && px ? ` · ${eur(p.prix * 10)}/an` : ''}</div><ul>${p.points.map(x => `<li>${ic('check')} ${x}</li>`).join('')}</ul></button>`; }).join('')}</div>`;
+  <div class="plans">${PLAN_ORDER.map(k => { const p = PLANS[k], px = planPrix(k, cycle); return `<button class="plan ${sel === k ? 'on' : ''}" style="--c:${p.color}" data-a="${act}" data-v="${k}">${k === reco ? '<span class="plan-reco">Recommandé pour vous</span>' : ''}<div class="plan-h"><span class="plan-rad"></span><b>${p.nom}</b><span class="sp"></span><span class="plan-px">${px ? `<b>${px} €</b><small>${perLbl(cycle)}</small>` : '<b>Gratuit</b>'}</span></div><div class="plan-l">${p.limite}${cycle === 'annuel' && px ? ` · au lieu de ${p.prix * 12} €` : ''}</div><ul>${p.points.map(x => `<li>${ic('check')} ${x}</li>`).join('')}</ul></button>`; }).join('')}</div>`;
 }
 function obForfait() {
   const reco = planReco();
   return `<h1 class="ob-h">Choisissez votre forfait</h1><p class="ob-p">Toutes les fonctions sont ouvertes pendant <b>${ESSAI_J} jours d’essai gratuit</b>. Vous pourrez changer de forfait à tout moment dans Paramètres.</p>
   ${planCards(OB.plan, OB.cycle, reco)}
-  <div class="note mt">${ic('info')}<span>Aucun moyen de paiement n’est demandé aujourd’hui. Tarifs indicatifs HT, susceptibles d’évoluer avant l’ouverture des abonnements. ${obSurf() ? `Recommandation basée sur vos ${nf(obSurf(), 0)} ha et ${matUnits().length} matériel(s).` : ''}</span></div>`;
+  <div class="note mt">${ic('info')}<span>Aucun moyen de paiement n’est demandé aujourd’hui. Tarifs indicatifs HT, susceptibles d’évoluer avant l’ouverture des abonnements. ${Math.max(obSurf(), obRepTot()) ? `Recommandation basée sur vos ${nf(Math.max(obSurf(), obRepTot()), 0)} ha et ${matUnits().length} matériel(s).` : ''}</span></div>`;
 }
 ACT.obPlan = d => { OB.plan = d.v; obSave(); obRerender(); };
 ACT.obPlanCyc = d => { OB.cycle = d.v; obSave(); obRerender(); };
 
 /* ---- Étape : options ---- */
 function optCards(a, act = 'obOpt') {
-  return `<div class="opts">${Object.entries(OPTIONS).map(([k, o]) => { const incl = a.plan === 'pro' && o.inPro, on = incl || a.options.includes(k); const px = o.unique ? `${o.prix} € une fois` : `+${nf(a.cycle === 'annuel' ? o.prix * 10 / 12 : o.prix, a.cycle === 'annuel' ? 2 : 0)} €/mois`;
+  return `<div class="opts">${Object.entries(OPTIONS).map(([k, o]) => { const incl = a.plan === 'pro' && o.inPro, on = incl || a.options.includes(k); const px = o.unique ? `${o.prix} € une fois` : `+${a.cycle === 'annuel' ? o.prix * 10 : o.prix} €${a.cycle === 'annuel' ? '/an' : '/mois'}`;
     return `<button class="opt ${on ? 'on' : ''} ${incl ? 'incl' : ''}" data-a="${act}" data-v="${k}" ${incl ? 'disabled' : ''}><span class="opt-ic">${ic(o.icon)}</span><span class="opt-tx"><b>${o.nom}${o.bientot ? ' <em>Bientôt</em>' : ''}</b><small>${o.desc}</small><span class="opt-px">${incl ? 'Inclus dans Pro' : o.bientot ? `${px} · non facturé avant disponibilité` : px}</span></span><span class="switch ${on ? 'on' : ''}"></span></button>`; }).join('')}</div>`;
 }
 function obOptions() {
@@ -315,7 +366,7 @@ ACT.wsGo = d => { closeModal(); setTimeout(() => d.x === 'go' ? go(d.r) : ACT[d.
 /* ---- Forfait dans Paramètres ---- */
 let ABO = null;
 ACT.aboEdit = () => { const a = abo(); ABO = { plan: a.plan, cycle: a.cycle, options: [...(a.options || [])] }; openModal({ title: 'Mon forfait', wide: true, body: '<div id="aboB"></div>', submit: 'Enregistrer', onMount: renderAbo, onSubmit: () => { const prev = abo(); S.abonnement = { ...prev, implicite: false, plan: ABO.plan, cycle: ABO.cycle, options: [...ABO.options] }; commit(`Forfait ${PLANS[ABO.plan].nom} enregistré`); } }); };
-function renderAbo() { document.getElementById('aboB').innerHTML = `${planCards(ABO.plan, ABO.cycle, null, 'aboPlan')}<div class="sec-h"><h3>Options</h3></div>${optCards(ABO, 'aboOpt')}<div class="ob-tot mt"><small>Total après l’essai</small><b>${eur2(aboTotal(ABO))}<span>/mois HT</span></b></div><div class="formula">Aucun paiement n’est traité dans l’application pour l’instant : la souscription sera ouverte avec les comptes en ligne. Tarifs indicatifs.</div>`; }
+function renderAbo() { document.getElementById('aboB').innerHTML = `${planCards(ABO.plan, ABO.cycle, null, 'aboPlan')}<div class="sec-h"><h3>Options</h3></div>${optCards(ABO, 'aboOpt')}<div class="ob-tot mt"><small>Total après l’essai</small><b>${eur2(aboTotal(ABO))}<span>${perLbl(ABO.cycle)}</span></b></div><div class="formula">Aucun paiement n’est traité dans l’application pour l’instant : la souscription sera ouverte avec les comptes en ligne. Tarifs indicatifs.</div>`; }
 ACT.aboPlan = d => { ABO.plan = d.v; renderAbo(); };
 ACT.aboPlanCyc = d => { ABO.cycle = d.v; renderAbo(); };
 ACT.aboOpt = d => { const i = ABO.options.indexOf(d.v); i >= 0 ? ABO.options.splice(i, 1) : ABO.options.push(d.v); renderAbo(); };
