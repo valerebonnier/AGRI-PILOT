@@ -55,6 +55,7 @@ const ICONS = {
   shovel: '<path d="M2 22l8-8M14 4l6 6M17 7l-7 7M12.5 5.5 18.5 11.5 16 14a4 4 0 0 1-5.7 0L10 13.7a4 4 0 0 1 0-5.7z"/>',
   flask: '<path d="M9 3h6M10 3v6L4.5 18.5A1.7 1.7 0 0 0 6 21h12a1.7 1.7 0 0 0 1.5-2.5L14 9V3M7 15h10"/>',
   wrench: '<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/>',
+  todo: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 3v2h6V3M8.5 10h7M8.5 14h7M8.5 18h4"/>',
   lock: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
 };
 const ic = (n, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24">${ICONS[n] || ''}</svg>`;
@@ -145,12 +146,12 @@ function sparkline(vals, color = 'var(--primary)', w = 90, h = 28) {
 /* ---------- État d'interface ---------- */
 const ROUTES = [
   ['dashboard', 'Tableau de bord', 'home', 'Pilotage'],
-  ['taches', 'Tâches', 'check', 'Pilotage'],
+  ['taches', 'Tâches', 'todo', 'Pilotage'],
   ['exploitation', 'Exploitation', 'farm', 'Pilotage'],
   ['parcellaire', 'Parcellaire', 'map', 'Production'],
   ['itk', 'Itinéraires techniques', 'sprout', 'Production'],
   ['interventions', 'Interventions', 'tasks', 'Production'],
-  ['stocks', 'Gestion des stocks', 'box', 'Production'],
+  ['stocks', 'Stocks', 'box', 'Production'],
   ['ventes', 'Ventes et achats', 'cart', 'Économie'],
   ['economie', 'Gestion économique', 'chart', 'Économie'],
   ['materiel', 'Parc matériel', 'tractor', 'Économie'],
@@ -230,7 +231,7 @@ function shell() {
       <div class="sp"></div>
       <select class="inp hide-m" style="width:auto;height:38px" data-ch="camp" title="Campagne analysée">${[2025, 2026, 2027].map(c => `<option value="${c}" ${PREFS.camp === c ? 'selected' : ''}>Campagne ${campLabel(c)}${c === CURRENT_CAMP ? ' (en cours)' : ''}</option>`).join('')}</select>
       <button class="btn icon g" data-a="search" title="Recherche globale (Ctrl+K)">${ic('search')}</button>
-      <a href="#taches" class="btn g top-tasks ${UI.route === 'taches' ? 'on' : ''}" title="Tâches" aria-label="Tâches${urgent ? ` (${urgent} à traiter)` : ''}">${ic('check')}<span class="hide-m">Tâches</span>${urgent ? `<span class="dot">${urgent}</span>` : ''}</a>
+      <a href="#taches" class="btn g top-tasks ${UI.route === 'taches' ? 'on' : ''}" title="Tâches" aria-label="Tâches${urgent ? ` (${urgent} à traiter)` : ''}">${ic('todo')}<span class="tt-l">Tâches</span>${urgent ? `<span class="tt-n">${urgent}</span>` : ''}</a>
       <button class="btn icon g hide-m" data-a="theme" title="Mode sombre">${ic(PREFS.theme === 'dark' ? 'sun' : 'moon')}</button>
       <button class="btn p hide-m" data-a="actionSheet">${ic('plus')} Saisir</button>
     </header>

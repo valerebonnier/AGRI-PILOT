@@ -707,6 +707,11 @@ function stockLevel(i) {
 }
 const gauge = (i, big) => { const l = stockLevel(i); if (!l || l.ratio == null) return ''; return `<div class="gauge ${big ? 'big' : ''} ${l.state}"><i style="width:${l.ratio * 100}%"></i>${l.seuilPos ? `<b style="left:${l.seuilPos * 100}%" title="Seuil d'alerte"></b>` : ''}</div>`; };
 const stIcon = i => STOCK_META[i.cat]?.icon || 'box';
+/** Total des quantités, regroupées par unité (kg et t additionnés en tonnes). */
+function qtyTotals(items) {
+  const g = {}; items.forEach(i => { if (!(i.qte > 0)) return; const u = i.unite === 'kg' || i.unite === 't' ? 't' : i.unite; g[u] = (g[u] || 0) + (i.unite === 'kg' ? i.qte / 1000 : i.qte); });
+  return Object.entries(g).map(([u, v]) => u === 't' ? (v < 1 ? `${nf(v * 1000)} kg` : `${nfx(v, 1)} t`) : u === 'L' ? `${nf(v)} L` : `${nfx(v, 1)} ${u}${v > 1 && u === 'dose' ? 's' : ''}`).join(' · ') || '0';
+}
 function harvestInfo(i) { const inQ = sum(S.mouvements.filter(m => m.itemId === i.id && m.type === 'entree'), m => m.qte); const sold = sum(S.ventes.filter(v => v.itemId === i.id), v => v.qte); return { inQ, sold }; }
 
 VIEWS.stocks = () => {
@@ -725,10 +730,11 @@ function stockOverview() {
   const low = S.stock.filter(i => i.cat !== 'production' && i.seuil > 0 && i.qte <= i.seuil).sort((a, b) => a.qte / a.seuil - b.qte / b.seuil);
   const crops = S.stock.filter(i => i.cat === 'production' && i.qte > 0.001).sort((a, b) => b.campagne - a.campagne || b.qte - a.qte);
   const tonnes = sum(crops, i => i.qte);
-  return `<div class="st-hero"><div><span>Valeur des intrants</span><b>${eur(st.intrants)}</b><small>au prix d’achat moyen</small></div><div><span>Récoltes en stock</span><b>${nf(tonnes, 1)} t</b><small>≈ ${keur(st.production)} au cours de référence</small></div></div>
+  const inStock = S.stock.filter(i => i.cat !== 'production' && i.qte > 0).length;
+  return `<div class="st-hero"><div><span>Récoltes en stock</span><b>${nf(tonnes, 1)} t</b><small>${crops.length} lot(s) · ≈ ${keur(st.production)}</small></div><div><span>Intrants en stock</span><b>${inStock} produit${inStock > 1 ? 's' : ''}</b><small>${low.length ? `${low.length} à réapprovisionner` : 'aucune alerte'} · ${keur(st.intrants)}</small></div></div>
   ${low.length ? `<div class="sec-h"><h3>${ic('alert')} À réapprovisionner</h3><span class="n-pill">${low.length}</span></div><div class="hscroll">${low.map(i => `<div class="st-alert" style="--c:${STOCK_META[i.cat].color}" data-a="openStock" data-id="${i.id}"><div class="row"><span class="st-ic">${ic(stIcon(i))}</span><b>${esc(i.nom)}</b></div><div class="q ${i.qte <= 0 ? 'danger' : 'warn'}">${qty(i.qte, i.unite)}</div><small>seuil ${qty(i.seuil, i.unite)}</small>${gauge(i)}<button class="btn sm p" data-a="stockIn" data-id="${i.id}">${ic('plus')} Entrée</button></div>`).join('')}</div>` : `<div class="note mt">${ic('check')}<span>Aucun produit sous son seuil d’alerte.</span></div>`}
   <div class="sec-h"><h3>Par catégorie</h3></div>
-  <div class="st-cats">${Object.entries(STOCK_META).map(([k, m]) => { const items = S.stock.filter(i => i.cat === k && (k !== 'production' || i.qte > 0.001)); const val = sum(items, i => stockValue(i) || 0); const nLow = items.filter(i => stockLevel(i)?.state && stockLevel(i).state !== 'ok').length; const sub = k === 'production' ? `${nf(sum(items, i => i.qte), 1)} t` : k === 'carburants' && items[0] ? qty(sum(items, i => i.qte), items[0].unite) : `${items.filter(i => i.qte > 0).length} produit${items.filter(i => i.qte > 0).length > 1 ? 's' : ''} en stock`; return `<button class="st-cat" style="--c:${m.color}" data-a="tab" data-k="stk" data-v="${k}"><span class="st-ic">${ic(m.icon)}</span>${nLow ? `<span class="st-badge">${nLow}</span>` : ''}<b>${m.label}</b><span>${sub}</span><em>${keur(val)}${k === 'production' ? ' (théo.)' : ''}</em></button>`; }).join('')}</div>
+  <div class="st-cats">${Object.entries(STOCK_META).map(([k, m]) => { const items = S.stock.filter(i => i.cat === k && (k !== 'production' || i.qte > 0.001)); const val = sum(items, i => stockValue(i) || 0); const nLow = items.filter(i => stockLevel(i)?.state && stockLevel(i).state !== 'ok').length; const np = items.filter(i => i.qte > 0).length; return `<button class="st-cat" style="--c:${m.color}" data-a="tab" data-k="stk" data-v="${k}"><span class="st-ic">${ic(m.icon)}</span>${nLow ? `<span class="st-badge">${nLow}</span>` : ''}<b>${m.label}</b><em>${qtyTotals(items)}</em><span>${np} produit${np > 1 ? 's' : ''} · ${keur(val)}</span></button>`; }).join('')}</div>
   ${crops.length ? `<div class="sec-h"><h3>Récoltes</h3><span class="sp"></span><button class="lnk" data-a="tab" data-k="stk" data-v="production">Tout ${ic('chevR')}</button></div><div class="hscroll">${crops.slice(0, 8).map(siloCard).join('')}</div>` : ''}`;
 }
 function siloCard(i) {
@@ -745,7 +751,7 @@ function stockCategory(cat) {
   if (cat === 'production') { items = items.filter(i => i.qte > 0.001 || UI.f.showEmpty); return `${items.length ? `<div class="silos">${items.sort((a, b) => b.campagne - a.campagne).map(siloCard).join('')}</div>` : '<div class="card empty">Aucune récolte en stock. Les récoltes s’ajoutent automatiquement quand vous enregistrez une opération « Récolte ».</div>'}`; }
   const val = sum(items, i => stockValue(i) || 0);
   return `<div class="row mb" style="gap:10px"><div class="search-in" style="flex:1">${ic('search')}<input class="inp" placeholder="Rechercher dans ${m.label.toLowerCase()}" data-in="stkQ" value="${esc(UI.q.stk || '')}"></div></div>
-  <div class="small muted mb">${items.length} produit(s) · valeur ${eur(val)}</div>
+  <div class="small muted mb"><b style="color:var(--text)">${qtyTotals(items)}</b> · ${items.length} produit(s) · ${eur(val)}</div>
   ${items.sort((a, b) => (b.qte > 0) - (a.qte > 0) || a.nom.localeCompare(b.nom)).map(i => { const l = stockLevel(i); return `<div class="st-item ${i.qte <= 0 ? 'empty' : ''}" style="--c:${m.color}" data-a="openStock" data-id="${i.id}"><span class="st-ic">${ic(m.icon)}</span><div class="st-main"><b>${esc(i.nom)}</b><small>${esc(i.emplacement || '—')}${i.lot ? ' · lot ' + esc(i.lot) : ''}</small>${gauge(i)}</div><div class="st-r"><b class="${l?.state || ''}">${qty(i.qte, i.unite)}</b><small>${eur(stockValue(i))}</small></div></div>`; }).join('') || '<div class="card empty">Aucun produit</div>'}
   <button class="btn mt" style="width:100%" data-a="newItem" data-cat="${cat}">${ic('plus')} Ajouter un produit ${m.label.toLowerCase()}</button>`;
 }
@@ -778,7 +784,7 @@ DRAWERS.stock = id => {
     : [['stockIn', 'plus', 'Entrée', 'var(--c-cult)', { id: i.id }], ['stockOut', 'minus', 'Sortie', 'var(--c-stock)', { id: i.id }], ['stockCount', 'clipboard', 'Inventaire', 'var(--c-eco)', { id: i.id }], ['stockMove', 'move', 'Déplacer', 'var(--c-mat)', { item: i.id, type: 'transfert' }]];
   const h = isProd ? harvestInfo(i) : null;
   return {
-    title: esc(i.nom), body: `<div class="st-sheet" style="--c:${isProd ? CULTURES[i.culture]?.color || m.color : m.color}"><div class="row"><span class="st-ic big">${ic(m.icon)}</span><div style="flex:1;min-width:0"><small>${m.label}${i.lot ? ' · lot ' + esc(i.lot) : ''}</small><div class="st-big ${l?.state || ''}">${nfx(i.qte, 2)} <span>${i.unite}</span></div><small>${esc(i.emplacement || '—')}</small></div><div style="text-align:right"><small>${isProd ? 'Valeur théorique' : 'Valeur'}</small><b style="display:block;font-size:18px">${v == null ? '—' : eur(v)}</b><small>${isProd ? (refPrice(i.culture) != null ? `${eur(refPrice(i.culture))}/t` : 'pas de cours') : `${eur(i.pmp, i.pmp < 10 ? 3 : 2)}/${i.unite}`}</small></div></div>
+    title: esc(i.nom), body: `<div class="st-sheet" style="--c:${isProd ? CULTURES[i.culture]?.color || m.color : m.color}"><div class="row"><span class="st-ic big">${ic(m.icon)}</span><div style="flex:1;min-width:0"><small>${m.label}${i.lot ? ' · lot ' + esc(i.lot) : ''}</small><div class="st-big ${l?.state || ''}">${nfx(i.qte, 2)} <span>${i.unite}</span></div><small>${esc(i.emplacement || '—')}</small></div><div style="text-align:right"><small>${isProd ? 'Valeur théorique' : 'Valeur'}</small><span style="display:block;font-size:13.5px;font-weight:700;color:var(--text-2)">${v == null ? '—' : eur(v)}</span><small>${isProd ? (refPrice(i.culture) != null ? `${eur(refPrice(i.culture))}/t` : 'pas de cours') : `${eur(i.pmp, i.pmp < 10 ? 3 : 2)}/${i.unite}`}</small></div></div>
       ${gauge(i, true)}${l && l.ratio != null ? `<div class="row small" style="justify-content:space-between;margin-top:6px"><span>${l.state === 'ok' ? 'Niveau correct' : l.state === 'warn' ? 'Sous le seuil d’alerte' : 'Épuisé'}</span><span class="muted">seuil ${qty(i.seuil, i.unite)}${i.capacite ? ` · capacité ${qty(i.capacite, i.unite)}` : ''}</span></div>` : ''}
       ${h ? `<div class="silo-bar" style="margin-top:12px"><i style="width:${h.inQ ? Math.min(100, h.sold / h.inQ * 100) : 0}%"></i></div><div class="small muted" style="margin-top:4px">${nf(h.sold, 1)} t vendues sur ${nf(h.inQ, 1)} t récoltées</div>` : ''}</div>
     <div class="st-acts">${actions.map(([a, ico, lab, c, data]) => `<button style="--c:${c}" data-a="${a}" ${Object.entries(data).map(([k, x]) => `data-${k}="${x}"`).join(' ')}><span>${ic(ico)}</span>${lab}</button>`).join('')}</div>
@@ -805,9 +811,34 @@ function pickProduct(title, filter, next) {
   openModal({ title, body: `${Object.entries(STOCK_META).map(([k, m]) => { const its = items.filter(i => i.cat === k); return its.length ? `<div class="ob-fam" style="margin-top:12px">${m.label}</div><div class="card">${its.map(i => `<div class="mrow" style="--c:${m.color}" data-a="${next}" data-id="${i.id}"><div class="ic">${ic(m.icon)}</div><div class="tx"><b>${esc(i.nom)}</b><span>${qty(i.qte, i.unite)} · ${esc(i.emplacement || '')}</span></div>${ic('chevR')}</div>`).join('')}</div>` : ''; }).join('')}`, foot: '<button type="button" class="btn" data-a="newItemFromPick">' + ic('plus') + ' Nouveau produit</button><button type="button" class="btn" data-a="closeModal">Fermer</button>' });
 }
 ACT.newItemFromPick = () => { closeModal(); setTimeout(() => itemForm(null), 200); };
-ACT.purchase = d => { if (d.item) return ACT.stockIn({ id: d.item }); pickProduct('Entrée en stock — quel produit ?', i => i.cat !== 'production', 'stockInGo'); };
+ACT.purchase = d => { if (d && d.item) return ACT.stockIn({ id: d.item }); stockWizard('in', d && d.cat); };
+/* ---- Assistant Entrée / Sortie : catégorie → produit (de cette catégorie) → quantité ---- */
+let SWZ = null;
+function stockWizard(mode, cat) { SWZ = { mode, cat: cat && cat !== 'production' || mode === 'out' ? cat || null : null, creating: false }; openModal({ title: mode === 'in' ? 'Entrée en stock' : 'Sortie de stock', body: '', foot: '', onMount: renderSWZ }); }
+function renderSWZ() {
+  const f = document.getElementById('mf'); if (!f || !SWZ) return;
+  const cats = Object.entries(STOCK_META).filter(([k]) => SWZ.mode === 'out' || k !== 'production');
+  if (!SWZ.cat) { f.innerHTML = `<p class="small muted" style="margin:0">${SWZ.mode === 'in' ? 'Que rentrez-vous ?' : 'Que sortez-vous ?'}</p><div class="st-pick big">${cats.map(([k, m]) => { const n = S.stock.filter(i => i.cat === k && (SWZ.mode === 'in' || i.qte > 0)).length; return `<button type="button" style="--c:${m.color}" data-a="swzCat" data-c="${k}"><span class="st-ic">${ic(m.icon)}</span>${m.label}<small>${n} produit${n > 1 ? 's' : ''}</small></button>`; }).join('')}</div>${SWZ.mode === 'in' ? `<div class="note small">${ic('info')}<span>Les récoltes entrent automatiquement en stock avec l’opération « Récolte ».</span></div>` : ''}`; return; }
+  const m = STOCK_META[SWZ.cat];
+  const items = S.stock.filter(i => i.cat === SWZ.cat && (SWZ.mode === 'in' || i.qte > 0)).sort((a, b) => (b.qte > 0) - (a.qte > 0) || a.nom.localeCompare(b.nom));
+  if (SWZ.creating) { f.innerHTML = `<button type="button" class="lnk-back" data-a="swzBack">${ic('chevL')} ${m.label}</button><div class="row" style="gap:10px;margin:6px 0 4px"><span class="st-ic" style="--c:${m.color};background:${m.color};color:#fff">${ic(m.icon)}</span><b>Nouveau produit · ${m.label.toLowerCase()}</b></div>
+    <label class="field"><span>Nom du produit</span><input class="inp" id="swzNom" placeholder="${{ semences: 'Ex. : Semence blé KWS Extase', engrais: 'Ex. : Ammonitrate 27 %', phyto: 'Ex. : nom commercial du produit', amendements: 'Ex. : Chaux vive', carburants: 'Ex. : GNR', production: '' }[SWZ.cat] || ''}" autocomplete="off"></label>
+    <div class="field"><span>Unité</span><div class="ob-chips" id="swzU">${[['kg', 'kg'], ['t', 'tonne'], ['L', 'litre'], ['u', 'unité'], ['dose', 'dose']].map(([v, l]) => `<button type="button" class="fchip ${v === ({ phyto: 'L', carburants: 'L', amendements: 't' }[SWZ.cat] || 'kg') ? 'on' : ''}" style="--c:var(--primary)" data-a="swzUnit" data-v="${v}">${l}</button>`).join('')}</div></div>
+    <button type="button" class="btn p mt" style="width:100%;height:50px" data-a="swzCreate">${ic('check')} Créer et saisir la quantité</button>`; setTimeout(() => document.getElementById('swzNom')?.focus(), 60); return; }
+  f.innerHTML = `<button type="button" class="lnk-back" data-a="swzBack">${ic('chevL')} Catégories</button>
+  <div class="row" style="gap:10px;margin:6px 0 2px"><span class="st-ic" style="background:${m.color};color:#fff">${ic(m.icon)}</span><b style="font-size:16px">${m.label}</b><span class="sp"></span><span class="small muted">${items.length} produit(s)</span></div>
+  ${SWZ.mode === 'in' ? `<button type="button" class="btn mt" style="width:100%;height:48px;border-style:dashed" data-a="swzNew">${ic('plus')} Nouveau produit ${m.label.toLowerCase()}</button>` : ''}
+  <div class="swz-list">${items.map(i => `<button type="button" class="swz-item" style="--c:${m.color}" data-a="swzPick" data-id="${i.id}"><span class="st-ic">${ic(m.icon)}</span><span class="t"><b>${esc(i.nom)}</b><small>${esc(i.emplacement || '')}</small></span><span class="q ${stockLevel(i)?.state || ''}">${qty(i.qte, i.unite)}</span></button>`).join('') || `<div class="empty small">Aucun produit ${SWZ.mode === 'out' ? 'en stock ' : ''}dans cette catégorie.</div>`}</div>
+  `;
+}
+ACT.swzCat = d => { SWZ.cat = d.c; SWZ.creating = false; renderSWZ(); };
+ACT.swzBack = () => { if (SWZ.creating) SWZ.creating = false; else SWZ.cat = null; renderSWZ(); };
+ACT.swzNew = () => { SWZ.creating = true; SWZ.unit = { phyto: 'L', carburants: 'L', amendements: 't' }[SWZ.cat] || 'kg'; renderSWZ(); };
+ACT.swzUnit = d => { SWZ.unit = d.v; document.querySelectorAll('#swzU .fchip').forEach(x => x.classList.toggle('on', x.dataset.v === d.v)); };
+ACT.swzCreate = () => { const nom = document.getElementById('swzNom')?.value.trim(); if (!nom) { toast('Indiquez le nom du produit', 'warn'); return; } const m = STOCK_META[SWZ.cat]; const it = { id: uid('st'), nom, cat: SWZ.cat, unite: SWZ.unit || 'kg', qte: 0, pmp: 0, basePrix: 0, batch: 1, seuil: 0, capacite: null, emplacement: { semences: 'Hangar semences', engrais: 'Hangar engrais', phyto: 'Local phytosanitaire', carburants: 'Cuve GNR', amendements: 'Plateforme' }[SWZ.cat] || '', fournisseur: '', lot: '', dateEntree: TODAY }; S.stock.push(it); saveState(); closeModal(); setTimeout(() => ACT.stockIn({ id: it.id }), 200); };
+ACT.swzPick = d => { const mode = SWZ.mode; closeModal(); setTimeout(() => mode === 'in' ? ACT.stockIn({ id: d.id }) : ACT.stockOut({ id: d.id }), 200); };
 ACT.stockInGo = d => { closeModal(); setTimeout(() => ACT.stockIn(d), 200); };
-ACT.stockOutPick = () => pickProduct('Sortie de stock — quel produit ?', i => i.qte > 0, 'stockOutGo');
+ACT.stockOutPick = d => stockWizard('out', d && d.cat);
 ACT.stockOutGo = d => { closeModal(); setTimeout(() => ACT.stockOut(d), 200); };
 ACT.stockIn = d => {
   const it = byId('stock', d.id); const m = STOCK_META[it.cat];
