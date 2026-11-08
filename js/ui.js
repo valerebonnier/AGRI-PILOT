@@ -2,7 +2,7 @@
 /* =====================================================================
    AGRI PILOT — Interface : icônes, formats, graphiques, structure, routeur
    ===================================================================== */
-const APP_VERSION = '2026.11.08-v14';
+const APP_VERSION = '2026.11.08-v15';
 const ICONS = {
   home: '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>',
   farm: '<path d="M3 21V10l9-6 9 6v11M9 21v-6h6v6M2 21h20"/>',
@@ -148,6 +148,7 @@ function sparkline(vals, color = 'var(--primary)', w = 90, h = 28) {
 const ROUTES = [
   ['dashboard', 'Tableau de bord', 'home', 'Pilotage'],
   ['taches', 'Tâches', 'todo', 'Pilotage'],
+  ['equipe', "Main-d'œuvre", 'users', 'Pilotage'],
   ['exploitation', 'Exploitation', 'farm', 'Pilotage'],
   ['parcellaire', 'Parcellaire', 'map', 'Production'],
   ['itk', 'Itinéraires techniques', 'sprout', 'Production'],
@@ -162,7 +163,7 @@ const ROUTES = [
 ];
 const DEFAULT_WIDGETS = ['premiers', 'categories', 'priorites', 'cultures', 'actions', 'kpis', 'surfaces', 'marges', 'ca', 'charges', 'stocks', 'cours', 'assistant'];
 /* Couleur de catégorie de chaque module (cohérente avec les catégories de tâches) */
-const MOD_COLOR = { dashboard: 'var(--primary)', taches: 'var(--late)', exploitation: 'var(--c-cult)', parcellaire: 'var(--c-cult)', itk: 'var(--c-cult)', interventions: 'var(--c-cult)', stocks: 'var(--c-stock)', ventes: 'var(--c-vente)', economie: 'var(--c-eco)', materiel: 'var(--c-mat)', pac: 'var(--c-admin)', documents: 'var(--c-doc)', parametres: 'var(--c-set)' };
+const MOD_COLOR = { dashboard: 'var(--primary)', taches: 'var(--late)', equipe: 'var(--c-admin)', exploitation: 'var(--c-cult)', parcellaire: 'var(--c-cult)', itk: 'var(--c-cult)', interventions: 'var(--c-cult)', stocks: 'var(--c-stock)', ventes: 'var(--c-vente)', economie: 'var(--c-eco)', materiel: 'var(--c-mat)', pac: 'var(--c-admin)', documents: 'var(--c-doc)', parametres: 'var(--c-set)' };
 const WIDGET_NAMES = { premiers: 'Premiers pas (nouvelle ferme)', cultures: 'Mes cultures', categories: 'Tâches par catégorie', priorites: 'À faire en priorité', actions: 'Actions rapides', kpis: 'Chiffres clés', surfaces: 'Répartition des surfaces', ca: "Évolution du chiffre d'affaires et des charges", marges: 'Marges par culture', charges: 'Répartition des charges', stocks: 'Répartition des stocks', cours: 'Cours agricoles', assistant: 'Assistant (aperçu)' };
 let PREFS = { theme: 'light', camp: CURRENT_CAMP - 1, widgets: DEFAULT_WIDGETS.map(id => ({ id, on: true })) };
 try { const p = JSON.parse(localStorage.getItem(PREF_KEY) || 'null'); if (p) PREFS = { ...PREFS, ...p }; } catch (e) { }

@@ -175,7 +175,7 @@ VIEWS.plus = () => {
   const todo = todoList();
   const n = c => todo.filter(t => t.cat === c && t.urgence !== 'ok').length;
   const cnt = { taches: todo.filter(t => t.urgence !== 'ok').length, interventions: n('cultures'), stocks: n('stocks'), materiel: n('materiel'), ventes: n('ventes'), pac: n('admin'), documents: n('documents') };
-  const groups = [['Production', ['taches', 'parcellaire', 'itk', 'interventions']], ['Économie', ['ventes', 'economie', 'materiel']], ['Administration', ['exploitation', 'pac', 'documents', 'parametres']]];
+  const groups = [['Travail', ['taches', 'equipe', 'interventions']], ['Production', ['parcellaire', 'itk', 'stocks']], ['Économie', ['ventes', 'economie', 'materiel']], ['Administration', ['exploitation', 'pac', 'documents', 'parametres']]];
   return `${groups.map(([g, ids]) => `<div class="sec-h"><h3>${g}</h3></div><div class="mod-grid">${ids.map(id => { const r = ROUTES.find(x => x[0] === id); return `<a class="mod" href="#${id}" style="--c:${MOD_COLOR[id]}"><span class="ti">${ic(r[2])}</span>${r[1]}${cnt[id] ? `<span class="cnt">${cnt[id]}</span>` : ''}</a>`; }).join('')}</div>`).join('')}
   <div class="sec-h"><h3>Réglages rapides</h3></div>
   <div class="card"><div class="mrow" style="cursor:default"><div class="ic">${ic('calendar')}</div><div class="tx"><b>Campagne analysée</b><span>Chiffres économiques affichés</span></div><select class="inp" style="width:auto;height:40px" data-ch="camp">${[2025, 2026, 2027].map(c => `<option value="${c}" ${PREFS.camp === c ? 'selected' : ''}>${campLabel(c)}</option>`).join('')}</select></div>
@@ -195,6 +195,73 @@ ACT.wMove = d => { const i = +d.i, j = i + +d.d; const w = PREFS.widgets;[w[i], 
 ACT.wReset = () => { PREFS.widgets = DEFAULT_WIDGETS.map(id => ({ id, on: true })); savePrefs(); closeModal(); render(); };
 ACT.goCours = () => { UI.tabs.eco = 'cours'; go('economie'); };
 
+/* =========================== MAIN-D'ŒUVRE : planning et affectation =========================== */
+const ROLES = ['Exploitant', 'Associé', 'Salarié', 'Saisonnier', 'Apprenti', 'Prestataire'];
+function weekStart(off = 0) { const d = D(TODAY); const wd = (d.getDay() + 6) % 7; d.setDate(d.getDate() - wd + off * 7); return iso(d); }
+VIEWS.equipe = () => {
+  const t = tab('eq', 'planning');
+  return `${tabsBar('eq', [['planning', 'Planning'], ['equipe', 'Équipe']], t)}${t === 'planning' ? eqPlanning() : eqTeam()}${pa([{ a: 'eqAddPerson', i: 'users', l: 'Personne', more: true }, { a: 'quickIv', i: 'plus', l: 'Planifier', primary: true, d: { statut: 'planifiee' } }])}`;
+};
+function eqGroups(ivs) { const g = {}, out = []; ivs.forEach(i => { const k = `${i.label}|${i.type}|${i.date}|${i.statut}|${ivPeople(i).join(',')}`; if (!g[k]) { g[k] = { ivs: [], ...i }; out.push(g[k]); } g[k].ivs.push(i); }); return out; }
+function eqRow(g) {
+  const ivs = g.ivs, pp = ivPeople(ivs[0]), done = g.statut === 'realisee', late = !done && g.date < TODAY;
+  return `<div class="eq-row ${done ? 'done' : ''}" data-a="${done ? 'openIv' : 'planAssign'}" data-id="${done ? ivs[0].id : ivs.map(i => i.id).join(',')}"><span class="ic">${done ? ic('check') : ic(IV_ICON[g.type] || 'sprout')}</span><span class="tx"><b>${esc(g.label)}</b><small>${ivs.length > 1 ? `${ivs.length} parcelles` : esc(parcName(ivs[0].parcelleId))} · ${nf(sum(ivs, i => i.surface), 1)} ha · ${nfx(sum(ivs, i => i.heures), 1)} h${late ? ' · <span style="color:var(--late);font-weight:700">en retard</span>' : ''}</small></span><span class="who">${pp.length ? pp.map(n => avatar(n, true)).join('') : `<span class="tk-assign">${ic('users')} Affecter</span>`}</span></div>`;
+}
+function eqPlanning() {
+  const off = +(UI.f.wk || 0), ws = weekStart(off), we = addDays(ws, 6), who = UI.f.eqWho || '';
+  const match = i => !who || (who === '_none' ? !ivPeople(i).length : ivPeople(i).includes(who));
+  const week = S.interventions.filter(i => i.date >= ws && i.date <= we && match(i));
+  const late = off === 0 ? S.interventions.filter(i => i.statut === 'planifiee' && i.date < ws && match(i)) : [];
+  const toAssign = S.interventions.filter(i => i.statut === 'planifiee' && !ivPeople(i).length && i.date <= we);
+  const hours = n => r2(sum(S.interventions.filter(i => i.date >= ws && i.date <= we && ivPeople(i).includes(n)), i => i.heures / Math.max(1, ivPeople(i).length)), 1);
+  const lbl = `${D(ws).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} – ${D(we).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}`;
+  let h = `<div class="wk-nav"><button class="btn icon" data-a="wk" data-d="-1">${ic('chevL')}</button><div><b>${off === 0 ? 'Cette semaine' : off === 1 ? 'Semaine prochaine' : off === -1 ? 'Semaine dernière' : 'Semaine'}</b><span>${lbl}</span></div><button class="btn icon" data-a="wk" data-d="1">${ic('chevR')}</button></div>
+  ${off ? `<div style="text-align:center;margin-top:6px"><button class="lnk" data-a="wk" data-d="0">Revenir à aujourd’hui</button></div>` : ''}
+  <div class="eq-load">${team().map(m => { const hh = hours(m.nom); return `<button class="eq-p ${who === m.nom ? 'on' : ''}" style="--c:${pColor(m.nom)}" data-a="eqWho" data-v="${esc(m.nom)}">${avatar(m.nom)}<span><b>${esc(m.nom.split(' ')[0])}</b><small>${nf(hh, 1)} h</small></span></button>`; }).join('')}<button class="eq-p ${who === '_none' ? 'on' : ''}" style="--c:var(--late)" data-a="eqWho" data-v="_none"><span class="av" style="--c:var(--late)">?</span><span><b>À affecter</b><small>${toAssign.length}</small></span></button></div>`;
+  if (toAssign.length && !who) h += `<div class="eq-assign"><div class="row"><b>${ic('alert')} ${toAssign.length} travail(x) sans personne</b><span class="sp"></span><button class="btn sm p" data-a="planAssign" data-id="${toAssign.map(i => i.id).join(',')}">Tout affecter</button></div><small>Prévus d’ici le ${dshort(we)} · touchez un travail pour l’affecter à quelqu’un</small></div>`;
+  if (late.length) h += `<div class="eq-day late"><div class="eq-dh"><b>${ic('alert')} En retard</b><span>${late.length}</span></div>${eqGroups(late.sort((a, b) => a.date.localeCompare(b.date))).map(eqRow).join('')}</div>`;
+  for (let k = 0; k < 7; k++) {
+    const d = addDays(ws, k), items = week.filter(i => i.date === d);
+    const isToday = d === TODAY;
+    h += `<div class="eq-day ${isToday ? 'today' : ''}"><div class="eq-dh"><b>${D(d).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' })}${isToday ? ' · aujourd’hui' : ''}</b><span>${items.length ? `${nfx(sum(items, i => i.heures), 1)} h` : ''}</span></div>${items.length ? eqGroups(items).map(eqRow).join('') : `<div class="eq-empty">—</div>`}</div>`;
+  }
+  return h;
+}
+ACT.wk = d => { UI.f.wk = +d.d === 0 ? 0 : (+(UI.f.wk || 0) + +d.d); render(); };
+ACT.eqWho = d => { UI.f.eqWho = UI.f.eqWho === d.v ? '' : d.v; render(); };
+let PA = null;
+ACT.planAssign = d => {
+  const ivs = d.id.split(',').map(id => byId('interventions', id)).filter(Boolean); if (!ivs.length) return;
+  const same = new Set(ivs.map(i => i.date)).size === 1;
+  PA = { ivs, sel: [...new Set(ivs.flatMap(ivPeople))], date: same ? ivs[0].date : '' };
+  if (!PA.sel.length) PA.sel = lastPeople();
+  const render2 = () => { document.getElementById('paBox').innerHTML = `<div class="field"><span>Qui ?</span>${peoplePicker(PA.sel, 'paWho')}</div><div class="field mt"><span>Quand ?</span><div class="ob-chips">${[['', same ? 'Garder la date' : 'Garder les dates'], [TODAY, "Aujourd'hui"], [addDays(TODAY, 1), 'Demain'], [addDays(TODAY, 2), D(addDays(TODAY, 2)).toLocaleDateString('fr-FR', { weekday: 'long' })], [addDays(TODAY, 7), 'Dans 7 j']].map(([v, l]) => `<button type="button" class="fchip ${(PA.date === v || (!v && PA.date === (same ? ivs[0].date : ''))) ? 'on' : ''}" style="--c:var(--primary)" data-a="paDate" data-v="${v}">${l}</button>`).join('')}</div><input class="inp mt" type="date" id="paD" value="${PA.date}" style="margin-top:8px"></div>`; document.getElementById('paD').onchange = e => { PA.date = e.target.value; }; };
+  ACT.paWho = x => { const i = PA.sel.indexOf(x.n); if (x.add) { if (i < 0) PA.sel.push(x.n); } else i >= 0 ? PA.sel.splice(i, 1) : PA.sel.push(x.n); render2(); };
+  ACT.paDate = x => { PA.date = x.v || (same ? ivs[0].date : ''); render2(); };
+  openModal({
+    title: `${esc(ivs[0].label)}${ivs.length > 1 ? ` · ${ivs.length} travaux` : ''}`, body: `<p class="small muted" style="margin-top:0">${ivs.length > 1 ? `${ivs.length} travaux · ${nf(sum(ivs, i => i.surface), 1)} ha` : `${esc(parcName(ivs[0].parcelleId))} · ${nf(ivs[0].surface, 1)} ha`} · prévu ${same ? 'le ' + dfr(ivs[0].date) : 'à des dates différentes'}</p><div id="paBox"></div>`,
+    foot: `${ivs.length === 1 ? `<button type="button" class="btn" data-a="paOpen" data-id="${ivs[0].id}">Détail</button>` : ''}<button class="btn p" type="submit" form="mf">${ic('check')} Enregistrer</button>`,
+    onMount: render2,
+    onSubmit: () => { if (!PA.sel.length) throw new Error('Choisissez au moins une personne'); PA.ivs.forEach(i => { i.personnes = [...PA.sel]; i.mo = PA.sel.join(', '); if (PA.date && PA.date !== i.date) { i.date = PA.date; i.custom = true; } }); rememberPeople(PA.sel); S.interventions.sort((a, b) => a.date.localeCompare(b.date)); commit(`Affecté à ${PA.sel.join(', ')}${PA.date ? ' · ' + dfr(PA.date) : ''}`); }
+  });
+};
+ACT.paOpen = d => { closeModal(); openDrawer('intervention', d.id); };
+function eqTeam() {
+  const ws = weekStart(0), we = addDays(ws, 6);
+  return `${team().map((m, i) => { const mine = S.interventions.filter(iv => ivPeople(iv).includes(m.nom) && iv.campagne === CURRENT_CAMP); const done = mine.filter(iv => iv.statut === 'realisee'); const wk = S.interventions.filter(iv => ivPeople(iv).includes(m.nom) && iv.date >= ws && iv.date <= we); return `<div class="eq-card" style="--c:${pColor(m.nom)}"><div class="row" data-a="personDetail" data-n="${esc(m.nom)}">${avatar(m.nom)}<div style="flex:1;min-width:0"><b>${esc(m.nom)}</b><small>${esc(m.role || '')}${m.taux ? ` · ${eur(m.taux, 2)}/h` : ''}</small></div><button class="btn sm icon g" data-a="eqEdit" data-i="${i}" aria-label="Modifier">${ic('edit')}</button></div>
+    <div class="eq-stats"><div><b>${wk.length}</b><span>cette semaine</span></div><div><b>${nf(sum(wk, x => x.heures / Math.max(1, ivPeople(x).length)), 1)} h</b><span>prévues</span></div><div><b>${done.length}</b><span>réalisées (campagne)</span></div><div><b>${nf(sum(done, x => x.heures / Math.max(1, ivPeople(x).length)), 0)} h</b><span>travaillées</span></div></div></div>`; }).join('') || '<div class="card empty">Aucune personne. Ajoutez votre équipe.</div>'}
+  <button class="btn mt" style="width:100%;height:48px;border-style:dashed" data-a="eqAddPerson">${ic('plus')} Ajouter une personne</button>
+  <div class="formula">Heures : temps de chaque opération réparti entre les personnes affectées. Coût horaire facultatif, utilisé plus tard pour le coût de main-d’œuvre.</div>`;
+}
+function personForm(i) {
+  const m = i != null ? team()[i] : { nom: '', role: 'Salarié', taux: '' };
+  openModal({ title: i != null ? 'Modifier la personne' : 'Ajouter une personne', body: `<label class="field"><span>Prénom et nom</span><input class="inp" name="nom" value="${esc(m.nom)}" required></label><div class="field"><span>Rôle</span><div class="ob-chips" id="roleC">${ROLES.map(r => `<label class="fchip ${m.role === r ? 'on' : ''}" style="--c:var(--c-admin)"><input type="radio" name="role" value="${r}" ${m.role === r ? 'checked' : ''} hidden onchange="document.querySelectorAll('#roleC .fchip').forEach(x=>x.classList.toggle('on',x.contains(this)))">${r}</label>`).join('')}</div></div><label class="field"><span>Coût horaire chargé (€/h, facultatif)</span><input class="inp" name="taux" inputmode="decimal" value="${m.taux || ''}"></label>${i != null ? `<button type="button" class="btn d g mt" data-a="eqDel" data-i="${i}">${ic('trash')} Retirer de l’équipe</button>` : ''}`,
+    onSubmit: f => { if (!f.nom?.trim()) throw new Error('Nom requis'); const nom = f.nom.trim(); const n = { nom, role: f.role || 'Salarié', taux: parseFloat(String(f.taux || '').replace(',', '.')) || 0 }; if (i != null) { const old = team()[i].nom; if (old !== nom) S.interventions.forEach(iv => { const pp = ivPeople(iv); if (pp.includes(old)) { iv.personnes = pp.map(x => x === old ? nom : x); iv.mo = iv.personnes.join(', '); } }); Object.assign(team()[i], n); } else S.exploitation.mainOeuvre.push(n); commit(i != null ? 'Personne modifiée' : 'Personne ajoutée'); } });
+}
+ACT.eqAddPerson = () => personForm(null);
+ACT.eqEdit = (d, el, e) => { e.stopPropagation(); personForm(+d.i); };
+ACT.eqDel = d => { S.exploitation.mainOeuvre.splice(+d.i, 1); closeModal(); commit('Personne retirée (son historique est conservé)'); };
+
 /* =========================== EXPLOITATION =========================== */
 VIEWS.exploitation = () => {
   const x = S.exploitation;
@@ -210,7 +277,7 @@ VIEWS.exploitation = () => {
     ${card('Assolement par campagne', `<div class="tbl-wrap"><table class="t"><thead><tr><th>Culture</th>${[2025, 2026, 2027].map(c => `<th class="n">${campLabel(c)}</th>`).join('')}</tr></thead><tbody>
       ${Object.keys(CULTURES).filter(k => [2025, 2026, 2027].some(c => S.parcelles.some(p => p.cultures[c]?.culture === k))).map(k => `<tr><td>${cultBadge(k)}</td>${[2025, 2026, 2027].map(c => { const v = sum(S.parcelles.filter(p => p.cultures[c]?.culture === k), p => p.surface); return `<td class="n">${v ? nf(v, 1) + ' ha' : '—'}</td>`; }).join('')}</tr>`).join('')}
     </tbody><tfoot><tr><td>Total</td>${[2025, 2026, 2027].map(c => `<td class="n">${nf(sum(S.parcelles.filter(p => p.cultures[c]), p => p.surface), 1)} ha</td>`).join('')}</tr></tfoot></table></div>`)}
-    ${card('Équipe et suivi du travail', `<div class="list">${x.mainOeuvre.map((m, i) => { const mine = S.interventions.filter(iv => ivPeople(iv).includes(m.nom) && iv.campagne === CURRENT_CAMP); const done = mine.filter(iv => iv.statut === 'realisee'); return `<div class="li" data-a="personDetail" data-n="${esc(m.nom)}">${avatar(m.nom)}<div class="tx"><b>${esc(m.nom)}</b><span>${esc(m.role)} · ${done.length} réalisée(s) · ${nf(sum(done, iv => iv.heures), 1)} h · ${nf(sum(done, iv => iv.surface), 0)} ha · ${mine.length - done.length} à faire</span></div><button class="btn xs g" data-a="delMO" data-i="${i}" aria-label="Retirer">${ic('trash')}</button></div>`; }).join('')}</div><div class="formula">Campagne ${campLabel(CURRENT_CAMP)} · touchez une personne pour voir le détail de son travail.</div>`, { right: `<button class="btn sm" data-a="addMO">${ic('plus')} Ajouter</button>` })}
+    ${card('Équipe et suivi du travail <button class="lnk" data-a="go" data-r="equipe" style="margin-left:8px">Planning ' + ic('chevR') + '</button>', `<div class="list">${x.mainOeuvre.map((m, i) => { const mine = S.interventions.filter(iv => ivPeople(iv).includes(m.nom) && iv.campagne === CURRENT_CAMP); const done = mine.filter(iv => iv.statut === 'realisee'); return `<div class="li" data-a="personDetail" data-n="${esc(m.nom)}">${avatar(m.nom)}<div class="tx"><b>${esc(m.nom)}</b><span>${esc(m.role)} · ${done.length} réalisée(s) · ${nf(sum(done, iv => iv.heures), 1)} h · ${nf(sum(done, iv => iv.surface), 0)} ha · ${mine.length - done.length} à faire</span></div><button class="btn xs g" data-a="delMO" data-i="${i}" aria-label="Retirer">${ic('trash')}</button></div>`; }).join('')}</div><div class="formula">Campagne ${campLabel(CURRENT_CAMP)} · touchez une personne pour voir le détail de son travail.</div>`, { right: `<button class="btn sm" data-a="addMO">${ic('plus')} Ajouter</button>` })}
   </div>
   <div class="grid g-3 mt">
     ${[2025, 2026, 2027].map(c => { const E = econ(c); return card(`Campagne ${campLabel(c)}`, `<div class="stat-line"><span>Statut</span><b>${c === CURRENT_CAMP ? '<span class="badge info">En cours</span>' : c === CURRENT_CAMP - 1 ? '<span class="badge warn">Commercialisation</span>' : '<span class="badge">Clôturée</span>'}</b></div><div class="stat-line"><span>Surface</span><b>${nf(E.surface, 1)} ha</b></div><div class="stat-line"><span>Chiffre d'affaires</span><b>${eur(E.ca)}</b></div><div class="stat-line"><span>Charges</span><b>${eur(E.charges)}</b></div><div class="stat-line"><span>Résultat réalisé</span><b>${eur(E.resultatRealise)}</b></div>`); }).join('')}
@@ -372,15 +439,16 @@ function syncItkParcel(p, camp = CURRENT_CAMP) {
   const labels = itk.steps.map(s => s.label);
   itk.steps.forEach(sp => {
     const date = addDays(rec.semis, sp.off);
-    const ex = S.interventions.filter(i => i.parcelleId === p.id && i.campagne === camp && i.label === sp.label);
+    let ex = S.interventions.filter(i => i.parcelleId === p.id && i.campagne === camp && i.label === sp.label);
+    if (!ex.length) { const same = S.interventions.filter(i => i.parcelleId === p.id && i.campagne === camp && i.type === sp.type && i.statut === 'realisee' && (['semis', 'recolte'].includes(sp.type) || Math.abs(daysBetween(i.date, date)) <= 20)); if (same.length) return; }
     const prods = sp.produits.filter(x => byId('stock', x.itemId)).map(x => ({ ...x })), mats = sp.materiels.filter(m => byId('materiel', m));
-    if (ex.length) { ex.filter(i => i.statut === 'planifiee' && i.fromItk).forEach(i => { Object.assign(i, { type: sp.type, date: date < TODAY && i.date >= TODAY ? i.date : date, produits: prods, materiels: mats, heures: r2(sp.hHa * p.surface, 1), surface: p.surface }); r.updated++; }); return; }
+    if (ex.length) { ex.filter(i => i.statut === 'planifiee' && i.fromItk && !i.custom).forEach(i => { Object.assign(i, { type: sp.type, date: date < TODAY && i.date >= TODAY ? i.date : date, produits: prods, materiels: mats, heures: r2(sp.hHa * p.surface, 1), surface: p.surface }); r.updated++; }); return; }
     if (date < TODAY) { r.past++; return; }
     S.interventions.push({ id: uid('iv'), campagne: camp, parcelleId: p.id, date, type: sp.type, label: sp.label, statut: 'planifiee', surface: p.surface, produits: prods, materiels: mats, heures: r2(sp.hHa * p.surface, 1), mo: '', meteo: '', obs: '', photos: [], fromItk: true });
     r.created++;
   });
   const before = S.interventions.length;
-  S.interventions = S.interventions.filter(i => !(i.parcelleId === p.id && i.campagne === camp && i.statut === 'planifiee' && i.fromItk && !labels.includes(i.label)));
+  S.interventions = S.interventions.filter(i => !(i.parcelleId === p.id && i.campagne === camp && i.statut === 'planifiee' && i.fromItk && !i.custom && !labels.includes(i.label)));
   r.removed = before - S.interventions.length;
   if (!rec.recoltePrev) { const rs = itk.steps.find(s => s.type === 'recolte'); if (rs) rec.recoltePrev = addDays(rec.semis, rs.off); }
   S.interventions.sort((a, b) => a.date.localeCompare(b.date));
@@ -469,12 +537,62 @@ function stepCostHa(sp) {
   const fuel = sum(sp.materiels, mid => { const m = byId('materiel', mid); return m && m.conso && gnr ? sp.hHa * m.conso * gnr.pmp : 0; });
   return { intr: r2(intr + fuel), meca: r2(meca) };
 }
+/* ---- Itinéraires techniques : un ITK par culture, détaillable par parcelle ---- */
 VIEWS.itk = () => {
-  const t = tab('itk', 'modeles');
-  return `${demoBar('Itinéraires techniques types de démonstration : doses et produits génériques, à adapter à vos pratiques et aux autorisations en vigueur.')}
-  ${tabsBar('itk', [['modeles', 'Modèles par culture'], ['suivi', 'Suivi par parcelle']], t)}
-  ${t === 'modeles' ? itkModeles() : itkSuivi()}`;
+  if (UI.f.itkP && byId('parcelles', UI.f.itkP)) return itkParcelView(byId('parcelles', UI.f.itkP));
+  if (UI.f.itkC && S.itk[UI.f.itkC]) return itkCultureView(UI.f.itkC);
+  const farm = assolement(CURRENT_CAMP).map(a => a.key).filter(k => S.itk[k]);
+  const missing = assolement(CURRENT_CAMP).map(a => a.key).filter(k => !S.itk[k]);
+  const others = Object.keys(S.itk).filter(k => !farm.includes(k));
+  return `<p class="itk-intro">Un itinéraire type par culture. Il crée automatiquement les travaux prévus de vos parcelles ; vous pouvez ensuite l’ajuster parcelle par parcelle.</p>
+  <div class="itk-cards">${farm.map(itkCard).join('') || '<div class="card empty">Aucune culture assolée cette campagne.</div>'}</div>
+  ${missing.length ? `<div class="sec-h"><h3>Sans itinéraire</h3></div><div class="fchips">${missing.map(k => `<button class="fchip" style="--c:${CULTURES[k].color}" data-a="itkCreate" data-c="${k}">${ic('plus')} ${CULTURES[k].nom}</button>`).join('')}</div>` : ''}
+  ${others.length ? `<div class="sec-h"><h3>Autres itinéraires types</h3><span class="muted small">cultures non assolées</span></div><div class="fchips">${others.map(k => `<button class="fchip" style="--c:${CULTURES[k]?.color}" data-a="itkOpen" data-c="${k}"><span class="cat-dot" style="--c:${CULTURES[k]?.color}"></span>${esc(CULTURES[k]?.nom || k)} · ${S.itk[k].steps.length} ét.</button>`).join('')}</div>` : ''}
+  <button class="btn mt2" style="width:100%;height:48px;border-style:dashed" data-a="itkNewPick">${ic('plus')} Créer un itinéraire pour une autre culture</button>`;
 };
+function itkStats(k) {
+  const ps = S.parcelles.filter(p => p.cultures[CURRENT_CAMP]?.culture === k);
+  const ivs = S.interventions.filter(i => i.campagne === CURRENT_CAMP && ps.some(p => p.id === i.parcelleId));
+  const next = ivs.filter(i => i.statut === 'planifiee').sort((a, b) => a.date.localeCompare(b.date))[0];
+  return { ps, ivs, done: ivs.filter(i => i.statut === 'realisee').length, next };
+}
+function itkCard(k) {
+  const t = S.itk[k], c = CULTURES[k], st = itkStats(k);
+  return `<button class="itk-card" style="--c:${c.color}" data-a="itkOpen" data-c="${k}"><div class="row"><span class="sw"></span><b>${esc(c.nom)}</b><span class="sp"></span>${ic('chevR')}</div>
+  <div class="itk-meta"><span><b>${t.steps.length}</b> étapes</span><span><b>${st.ps.length}</b> parcelle${st.ps.length > 1 ? 's' : ''}</span><span><b>${nf(sum(st.ps, p => p.surface), 1)}</b> ha</span></div>
+  ${st.ivs.length ? `<div class="bar" style="margin:10px 0 6px"><i style="width:${st.done / st.ivs.length * 100}%;background:var(--c)"></i></div><div class="small muted">${st.done}/${st.ivs.length} travaux réalisés</div>` : `<div class="small muted" style="margin-top:8px">${t.steps.length ? 'Aucun travail prévu' : 'Itinéraire à construire'}</div>`}
+  ${st.next ? `<div class="itk-next">${ic(IV_ICON[st.next.type] || 'sprout')}<span>Prochain : <b>${esc(st.next.label)}</b> · ${dshort(st.next.date)}</span></div>` : ''}</button>`;
+}
+ACT.itkOpen = d => { UI.f.itkC = d.c; UI.f.itkP = null; render(); window.scrollTo(0, 0); };
+ACT.itkBack = () => { if (UI.f.itkP) UI.f.itkP = null; else UI.f.itkC = null; render(); window.scrollTo(0, 0); };
+ACT.itkCreate = d => { S.itk[d.c] = S.itk[d.c] || { culture: d.c, semisType: '03-15', steps: [] }; UI.f.itkC = d.c; commit('Itinéraire créé : ajoutez vos étapes'); };
+ACT.itkNewPick = () => openModal({ title: 'Créer un itinéraire', body: `<div class="ob-chips">${Object.keys(CULTURES).filter(k => !S.itk[k]).map(k => `<button type="button" class="fchip" style="--c:${CULTURES[k].color}" data-a="itkCreateM" data-c="${k}"><span class="cat-dot" style="--c:${CULTURES[k].color}"></span>${CULTURES[k].nom}</button>`).join('') || '<span class="muted">Toutes les cultures ont déjà un itinéraire.</span>'}</div>`, foot: '' });
+ACT.itkCreateM = d => { closeModal(); ACT.itkCreate(d); };
+function itkCultureView(k) {
+  const t = S.itk[k], c = CULTURES[k], st = itkStats(k);
+  const steps = [...t.steps].sort((a, b) => a.off - b.off);
+  const semis = st.ps[0]?.cultures[CURRENT_CAMP]?.semis || `${+t.semisType.slice(0, 2) >= 8 ? CURRENT_CAMP - 1 : CURRENT_CAMP}-${t.semisType}`;
+  const costs = steps.map(stepCostHa);
+  return `<button class="lnk-back" data-a="itkBack">${ic('chevL')} Itinéraires</button>
+  <div class="itk-head" style="--c:${c.color}"><div class="row"><span class="sw"></span><div style="flex:1"><b>${esc(c.nom)}</b><span>${steps.length} étapes · ${st.ps.length} parcelle(s) · ${nf(sum(st.ps, p => p.surface), 1)} ha</span></div></div>
+    <div class="row mt" style="gap:8px"><button class="btn sm" data-a="itkSemis" data-c="${k}">${ic('calendar')} Semis : ${dfr(semis)}</button><span class="small muted">≈ ${eur(sum(costs, x => x.intr))}/ha d’intrants</span></div></div>
+  <div class="sec-h"><h3>Étapes</h3><span class="sp"></span><button class="lnk" data-a="itkStep" data-c="${k}">${ic('plus')} Ajouter</button></div>
+  <div class="itk-line">${steps.map((sp, i) => `<button class="itk-step" data-a="itkStep" data-c="${k}" data-s="${sp.id}"><span class="dot">${ic(IV_ICON[sp.type] || 'sprout')}</span><span class="body"><span class="when">${sp.off === 0 ? 'Jour du semis' : sp.off < 0 ? `${-sp.off} j avant semis` : `${sp.off} j après semis`} · ≈ ${dshort(addDays(semis, sp.off))}</span><b>${esc(sp.label)}</b><small>${sp.produits.map(x => { const it = byId('stock', x.itemId); return it ? `${esc(it.nom)} · ${nfx(x.dose, 2)} ${it.unite}/ha` : ''; }).filter(Boolean).join('<br>') || INTER_TYPES[sp.type]}</small></span>${ic('chevR')}</button>`).join('') || '<div class="card empty">Aucune étape. Touchez « Ajouter » pour construire l’itinéraire.</div>'}</div>
+  <button class="btn mt" style="width:100%;height:46px;border-style:dashed" data-a="itkStep" data-c="${k}">${ic('plus')} Ajouter une étape</button>
+  ${st.ps.length ? `<div class="sec-h"><h3>Par parcelle</h3><span class="muted small">touchez pour détailler ou ajuster</span></div><div class="card">${st.ps.map(p => { const ivs = st.ivs.filter(i => i.parcelleId === p.id); const d = ivs.filter(i => i.statut === 'realisee').length; const nx = ivs.filter(i => i.statut === 'planifiee').sort((a, b) => a.date.localeCompare(b.date))[0]; const cu = ivs.some(i => i.custom); return `<div class="mrow" style="--c:${c.color}" data-a="itkParc" data-id="${p.id}"><div class="ic">${ic('map')}</div><div class="tx"><b>${esc(p.nom)}${cu ? ' <span class="badge info" style="font-size:10px">ajusté</span>' : ''}</b><span>${d}/${ivs.length} réalisés${nx ? ` · prochain : ${esc(nx.label)} ${dshort(nx.date)}` : ''}</span></div>${statutParc(p)}</div>`; }).join('')}</div>` : ''}
+  <div class="row mt2" style="justify-content:center"><button class="btn sm g" data-a="itkSync" data-c="${k}">${ic('sprout')} Réappliquer aux parcelles</button></div>`;
+}
+ACT.itkParc = d => { UI.f.itkP = d.id; render(); window.scrollTo(0, 0); };
+function itkParcelView(p) {
+  const c = curCult(p), col = CULTURES[c?.culture]?.color || 'var(--primary)';
+  const ivs = S.interventions.filter(i => i.parcelleId === p.id && i.campagne === CURRENT_CAMP).sort((a, b) => a.date.localeCompare(b.date));
+  return `<button class="lnk-back" data-a="itkBack">${ic('chevL')} ${esc(CULTURES[c?.culture]?.nom || 'Itinéraire')}</button>
+  <div class="itk-head" style="--c:${col}"><div class="row"><span class="sw"></span><div style="flex:1"><b>${esc(p.nom)}</b><span>${nf(p.surface, 2)} ha · ${esc(CULTURES[c?.culture]?.nom || '')}${c?.variete ? ' · ' + esc(c.variete) : ''}</span></div>${statutParc(p)}</div></div>
+  <p class="small muted">Les modifications faites ici ne concernent que cette parcelle (marquées « ajusté ») et ne seront pas écrasées par l’itinéraire type.</p>
+  <div class="itk-line">${ivs.map(i => { const done = i.statut === 'realisee'; const pp = ivPeople(i); return `<div class="itk-step ${done ? 'done' : ''}" data-a="openIv" data-id="${i.id}"><span class="dot">${done ? ic('check') : ic(IV_ICON[i.type] || 'sprout')}</span><span class="body"><span class="when">${done ? 'Fait le' : 'Prévu le'} ${dfr(i.date)}${pp.length ? ' · ' + esc(pp.join(', ')) : ''}</span><b>${esc(i.label)}${i.custom ? ' <span class="badge info" style="font-size:10px">ajusté</span>' : ''}</b><small>${i.produits.map(x => { const it = byId('stock', x.itemId); return it ? `${esc(it.nom)} · ${nfx(x.dose, 2)} ${it.unite}/ha` : ''; }).filter(Boolean).join('<br>') || INTER_TYPES[i.type]}</small></span>${done ? '' : `<button class="act-s" data-a="editIv" data-id="${i.id}">Ajuster</button>`}</div>`; }).join('') || '<div class="card empty">Aucun travail pour cette campagne.</div>'}</div>
+  <div class="row mt" style="gap:8px"><button class="btn" style="flex:1" data-a="quickIv" data-pid="${p.id}" data-statut="planifiee">${ic('plus')} Étape pour cette parcelle</button><button class="btn" data-a="itkRealign" data-id="${p.id}">${ic('sprout')} Réaligner</button></div>`;
+}
+ACT.itkRealign = d => { const p = byId('parcelles', d.id); S.interventions.filter(i => i.parcelleId === p.id && i.campagne === CURRENT_CAMP && i.statut === 'planifiee' && i.fromItk).forEach(i => delete i.custom); const r = syncItkParcel(p); commit(`Parcelle réalignée sur l’itinéraire type (${r.updated} mis à jour, ${r.created} créé(s))`); };
 function itkModeles() {
   const keys = Object.keys(S.itk); const k = UI.f.itkC && S.itk[UI.f.itkC] ? UI.f.itkC : keys[0];
   const itk = S.itk[k]; const steps = [...itk.steps].sort((a, b) => a.off - b.off);
@@ -628,15 +746,15 @@ ACT.favFromIv = d => { const i = byId('interventions', d.id); S.favoris.push({ i
 
 /* ---- Saisie rapide d'intervention (objectif < 30 s) ---- */
 let QF = null;
-ACT.quickIv = d => quickIvForm({ pid: d.pid, fav: d.fav, type: d.type, pids: d.pids ? d.pids.split(',') : null, planLabel: d.plan });
+ACT.quickIv = d => quickIvForm({ pid: d.pid, fav: d.fav, type: d.type, pids: d.pids ? d.pids.split(',') : null, planLabel: d.plan, statut: d.statut });
 /**
  * Saisie d'opération. Peut cibler une ou plusieurs parcelles (ex. toutes les parcelles d'une culture).
  * Si une opération identique est prévue dans l'itinéraire de ces parcelles (même libellé), elle est
  * marquée réalisée au lieu de créer un doublon.
  */
-function quickIvForm({ pid, pids, fav, edit, type, planLabel } = {}) {
+function quickIvForm({ pid, pids, fav, edit, type, planLabel, statut } = {}) {
   if (edit) { const i = byId('interventions', edit); QF = { edit, typeChosen: true, open: {}, personnes: ivPeople(i), parcelles: [i.parcelleId], type: i.type, label: i.label, date: i.date, statut: 'planifiee', produits: i.produits.map(x => ({ ...x })), materiels: [...i.materiels], hHa: i.heures / i.surface, mo: i.mo, meteo: i.meteo, obs: i.obs, photos: i.photos || [], recolte: '' }; }
-  else QF = { personnes: lastPeople(), parcelles: pids ? [...pids] : pid ? [pid] : [], type: type || 'protection', typeLocked: !!type, typeChosen: !!type || !!planLabel, open: {}, label: '', date: TODAY, statut: 'realisee', produits: [], materiels: [], hHa: 0.1, mo: S.exploitation.mainOeuvre[0]?.nom || '', meteo: '', obs: '', photos: [], recolte: '', saveFav: false, autoLabel: true, planLabel: null, manual: false };
+  else QF = { personnes: lastPeople(), parcelles: pids ? [...pids] : pid ? [pid] : [], type: type || 'protection', typeLocked: !!type, typeChosen: !!type || !!planLabel, open: {}, label: '', date: statut === 'planifiee' ? addDays(TODAY, 1) : TODAY, statut: statut || 'realisee', produits: [], materiels: [], hHa: 0.1, mo: S.exploitation.mainOeuvre[0]?.nom || '', meteo: '', obs: '', photos: [], recolte: '', saveFav: false, autoLabel: true, planLabel: null, manual: false };
   if (fav) { applyFav(fav); QF.manual = true; }
   else if (!edit && QF.parcelles.length) suggestPlan(planLabel);
   const n = QF.parcelles.length;
@@ -705,6 +823,17 @@ function renderQF() {
         : `<div class="swz-list">${S.stock.filter(i => i.cat === pc && !QF.produits.some(x => x.itemId === i.id)).sort((a, b) => (b.qte > 0) - (a.qte > 0) || a.nom.localeCompare(b.nom)).map(i => `<button type="button" class="swz-item" style="--c:${STOCK_META[pc].color}" data-a="qfAddP" data-id="${i.id}"><span class="st-ic">${ic(STOCK_META[pc].icon)}</span><span class="t"><b>${esc(i.nom)}</b></span><span class="q ${i.qte <= 0 ? 'danger' : ''}">${qty(i.qte, i.unite)}</span></button>`).join('') || '<div class="empty small">Aucun produit dans cette catégorie</div>'}</div><button type="button" class="btn sm mt" style="border-style:dashed;width:100%" data-a="qfNewP">${ic('plus')} Nouveau produit ${STOCK_META[pc].label.toLowerCase()}</button>`}
     </div>` : `<button type="button" class="btn sm" data-a="qfPickOpen">${ic('plus')} Ajouter un produit</button>`}</div>`;
   }
+  // Semis : culture semée (obligatoire pour une parcelle non assolée)
+  if (QF.type === 'semis' && !QF.edit && QF.parcelles.length) {
+    const ps = QF.parcelles.map(id => byId('parcelles', id)); const noC = ps.filter(p => !curCult(p)); const cs = [...new Set(ps.map(p => curCult(p)?.culture).filter(Boolean))];
+    if (!QF.cultureSemis && cs.length === 1 && !noC.length) QF.cultureSemis = cs[0];
+    const farm = [...new Set([...assolement(CURRENT_CAMP).map(a => a.key), ...Object.keys(S.itk)])].filter(k => CULTURES[k] && !['prairie', 'jachere'].includes(k));
+    const changes = ps.filter(p => curCult(p) && QF.cultureSemis && curCult(p).culture !== QF.cultureSemis).length;
+    h += `<div class="qf-sec"><div class="qf-h open" style="cursor:default"><span class="n">${ic('sprout')}</span><span class="t">Culture semée</span><span class="s">${QF.cultureSemis ? esc(CULTURES[QF.cultureSemis].nom) : noC.length ? '<span style="color:var(--late)">obligatoire</span>' : ''}</span></div>
+      <div class="ob-chips">${farm.slice(0, 10).map(k => `<button type="button" class="fchip ${QF.cultureSemis === k ? 'on' : ''}" style="--c:${CULTURES[k].color}" data-a="qfCS" data-v="${k}"><span class="cat-dot" style="--c:${CULTURES[k].color}"></span>${CULTURES[k].nom}</button>`).join('')}</div>
+      <select class="inp" data-ch="qfCSsel" style="margin-top:8px"><option value="">Autre culture…</option>${opts(Object.keys(CULTURES).filter(k => !farm.slice(0, 10).includes(k)).map(k => [k, CULTURES[k].nom]), farm.slice(0, 10).includes(QF.cultureSemis) ? '' : QF.cultureSemis)}</select>
+      ${noC.length ? `<div class="small muted" style="margin-top:6px">${noC.length} parcelle(s) non assolée(s) : elles passeront en ${QF.cultureSemis ? esc(CULTURES[QF.cultureSemis].nom.toLowerCase()) : '…'} pour la campagne ${campLabel(CURRENT_CAMP)}.</div>` : ''}${changes ? `<div class="small" style="margin-top:6px;color:var(--warn-ink)">${ic('alert')} ${changes} parcelle(s) changeront de culture (les travaux prévus de l’ancienne culture seront retirés).</div>` : ''}</div>`;
+  }
   // Semis : variété ; Récolte : quantité
   if (QF.type === 'semis') h += `<label class="field"><span>Variété (facultatif)</span><input class="inp" data-in="qf" data-k="variete" value="${esc(QF.variete || (QF.parcelles.length === 1 ? curCult(byId('parcelles', QF.parcelles[0]))?.variete || '' : ''))}" placeholder="Ex. : Chevignon"></label>`;
   if (QF.type === 'recolte' && QF.statut === 'realisee') h += `<label class="field"><span>Quantité récoltée totale (t) *</span><input class="inp" inputmode="decimal" data-in="qf" data-k="recolte" value="${QF.recolte}" style="font-size:22px;font-weight:800;height:54px"><small>${QF.recolte && surf ? `${nfx(parseFloat(String(QF.recolte).replace(',', '.')) / surf, 2)} t/ha · ` : ''}répartie selon les surfaces et ajoutée au stock</small></label>`;
@@ -735,13 +864,15 @@ ACT.qfDate = d => { QF.date = d.v; renderQF(); };
 ACT.qfM = d => { const a = QF.materiels; const i = a.indexOf(d.id); i >= 0 ? a.splice(i, 1) : a.push(d.id); renderQF(); };
 ACT.qfPC = d => { QF.prodCat = d.c; QF.newProd = false; renderQF(); };
 ACT.qfPickOpen = () => { QF.pickOpen = true; renderQF(); };
-ACT.qfAddP = d => { const it = byId('stock', d.id); const c = QF.parcelles.length ? curCult(byId('parcelles', QF.parcelles[0]))?.culture : null; const st = c && S.itk[c]?.steps.find(s => s.type === QF.type && s.produits.some(x => x.itemId === d.id)); const dose = st ? st.produits.find(x => x.itemId === d.id).dose : ''; QF.produits = QF.produits.filter(x => x.itemId); QF.produits.push({ itemId: d.id, dose }); if (QF.type === 'semis' && it.variete && !QF.variete) QF.variete = it.variete; QF.pickOpen = false; QF.manual = true; renderQF(); setTimeout(() => { const el = document.querySelector(`[data-in="qfDose"][data-i="${QF.produits.length - 1}"]`); if (el && dose === '') el.focus(); }, 50); };
+ACT.qfAddP = d => { const it = byId('stock', d.id); const c = QF.parcelles.length ? curCult(byId('parcelles', QF.parcelles[0]))?.culture : null; const st = c && S.itk[c]?.steps.find(s => s.type === QF.type && s.produits.some(x => x.itemId === d.id)); const dose = st ? st.produits.find(x => x.itemId === d.id).dose : ''; QF.produits = QF.produits.filter(x => x.itemId); QF.produits.push({ itemId: d.id, dose }); if (QF.type === 'semis' && it.variete && !QF.variete) QF.variete = it.variete; if (QF.type === 'semis' && it.cultureSem && !QF.cultureSemis) QF.cultureSemis = it.cultureSem; QF.pickOpen = false; QF.manual = true; renderQF(); setTimeout(() => { const el = document.querySelector(`[data-in="qfDose"][data-i="${QF.produits.length - 1}"]`); if (el && dose === '') el.focus(); }, 50); };
 ACT.qfDel = d => { QF.produits.splice(+d.i, 1); QF.manual = true; renderQF(); };
 ACT.qfDose = d => { const x = QF.produits[+d.i]; const it = byId('stock', x.itemId); const step = DOSE_STEP[it?.unite] || 1; x.dose = Math.max(0, r2((parseFloat(String(x.dose).replace(',', '.')) || 0) + step * +d.d, 3)); QF.manual = true; renderQF(); };
 ACT.qfNewP = () => { QF.newProd = true; renderQF(); setTimeout(() => document.getElementById('qfNewNom')?.focus(), 50); };
 ACT.qfNewCancel = () => { QF.newProd = false; renderQF(); };
 ACT.qfNewU = d => { QF.newUnit = d.v; document.querySelectorAll('#qfNewU .fchip').forEach(x => x.classList.toggle('on', x.dataset.v === d.v)); };
 ACT.qfNewAdd = d => { const nom = document.getElementById('qfNewNom')?.value.trim(); if (!nom) { toast('Indiquez le nom du produit', 'warn'); return; } const it = { id: uid('st'), nom, cat: d.c, unite: QF.newUnit || ({ phyto: 'L', amendements: 't' }[d.c] || 'kg'), qte: 0, pmp: 0, basePrix: 0, batch: 1, seuil: 0, capacite: null, emplacement: '', fournisseur: '', lot: '', dateEntree: TODAY }; S.stock.push(it); QF.newProd = false; QF.newUnit = null; ACT.qfAddP({ id: it.id }); toast('Produit créé (stock à zéro : pensez à saisir une entrée)'); };
+ACT.qfCS = d => { QF.cultureSemis = d.v; renderQF(); };
+CH.qfCSsel = el => { if (el.value) { QF.cultureSemis = el.value; renderQF(); } };
 ACT.qfWho = d => { const a = QF.personnes; const i = a.indexOf(d.n); if (d.add) { if (i < 0) a.push(d.n); } else i >= 0 ? a.splice(i, 1) : a.push(d.n); renderQF(); };
 ACT.qfFav = d => { applyFav(d.id); QF.manual = true; QF.typeChosen = true; renderQF(); };
 CH.qfProd = el => { QF.produits[+el.dataset.i].itemId = el.value; QF.manual = true; renderQF(); };
@@ -761,19 +892,23 @@ function submitQF() {
   if (!QF.parcelles.length) throw new Error('Choisissez au moins une parcelle');
   const prods = QF.produits.filter(x => x.itemId && parseFloat(String(x.dose).replace(',', '.')) > 0).map(x => ({ itemId: x.itemId, dose: parseFloat(String(x.dose).replace(',', '.')) }));
   if (TYPE_REQ.includes(QF.type) && !prods.length) { QF.open.prod = true; renderQF(); throw new Error(QF.produits.some(x => x.itemId) ? 'Indiquez la dose par hectare du produit' : `Choisissez le ${QF.type === 'semis' ? 'semence' : 'produit'} utilisé`); }
+  if (QF.type === 'semis' && !QF.edit && QF.parcelles.some(id => !curCult(byId('parcelles', id))) && !QF.cultureSemis) throw new Error('Choisissez la culture semée');
   if (!QF.personnes.length) throw new Error('Indiquez qui ' + (QF.statut === 'realisee' ? 'a fait' : 'fera') + ' cette opération');
   rememberPeople(QF.personnes);
   const surfTot = qfSurface();
   const recolte = parseFloat(String(QF.recolte || '').replace(',', '.'));
   if (QF.type === 'recolte' && QF.statut === 'realisee' && !(recolte > 0)) throw new Error('Indiquez la quantité récoltée');
   if (QF.statut === 'realisee' && QF.date > TODAY) throw new Error('Une opération réalisée ne peut pas être datée dans le futur');
-  if (QF.edit) { const i = byId('interventions', QF.edit); Object.assign(i, { type: QF.type, label: QF.label || INTER_TYPES[QF.type], date: QF.date, produits: prods, materiels: [...QF.materiels], heures: r2(QF.hHa * i.surface, 1), mo: QF.personnes.join(', '), personnes: [...QF.personnes], meteo: QF.meteo, obs: QF.obs, photos: QF.photos }); commit('Intervention modifiée'); return; }
+  if (QF.edit) { const i = byId('interventions', QF.edit); i.custom = true; Object.assign(i, { type: QF.type, label: QF.label || INTER_TYPES[QF.type], date: QF.date, produits: prods, materiels: [...QF.materiels], heures: r2(QF.hHa * i.surface, 1), mo: QF.personnes.join(', '), personnes: [...QF.personnes], meteo: QF.meteo, obs: QF.obs, photos: QF.photos }); commit('Intervention modifiée'); return; }
   const warns = []; let total = 0;
+  if (QF.type === 'semis' && QF.cultureSemis) prods.forEach(x => { const it = byId('stock', x.itemId); if (it && it.cat === 'semences' && !it.cultureSem) it.cultureSem = QF.cultureSemis; });
   QF.parcelles.forEach(pid => {
     const p = byId('parcelles', pid);
+    if (QF.type === 'semis' && QF.cultureSemis && !QF.edit) { const rec = p.cultures[CURRENT_CAMP]; if (!rec || rec.culture !== QF.cultureSemis) { if (rec) S.interventions = S.interventions.filter(i => !(i.parcelleId === pid && i.campagne === CURRENT_CAMP && i.statut === 'planifiee' && i.fromItk)); p.cultures[CURRENT_CAMP] = { culture: QF.cultureSemis, variete: QF.variete || '', semis: QF.date, recoltePrev: null, rdtPrev: null, rdtReel: null }; } }
     const camp = Object.keys(p.cultures).map(Number).filter(c => p.cultures[c].semis <= QF.date || c === campOf(QF.date)).sort((a, b) => b - a)[0] || campOf(QF.date);
     let iv = QF.planLabel ? S.interventions.filter(i => i.parcelleId === pid && i.statut === 'planifiee' && i.label === QF.planLabel && i.type === QF.type).sort((a, b) => Math.abs(daysBetween(a.date, QF.date)) - Math.abs(daysBetween(b.date, QF.date)))[0] || null : null;
-    const data = { type: QF.type, label: QF.label || INTER_TYPES[QF.type], date: QF.date, produits: prods.map(x => ({ ...x })), materiels: [...QF.materiels], heures: r2(QF.hHa * p.surface, 1), mo: QF.personnes.join(', '), personnes: [...QF.personnes], meteo: QF.meteo, obs: QF.obs, photos: QF.photos };
+    const itkLbl = !QF.planLabel && (!QF.label || QF.label === INTER_TYPES[QF.type]) ? (S.itk[p.cultures[CURRENT_CAMP]?.culture]?.steps.filter(x => x.type === QF.type) || []) : [];
+    const data = { type: QF.type, label: itkLbl.length === 1 ? itkLbl[0].label : QF.label || INTER_TYPES[QF.type], date: QF.date, produits: prods.map(x => ({ ...x })), materiels: [...QF.materiels], heures: r2(QF.hHa * p.surface, 1), mo: QF.personnes.join(', '), personnes: [...QF.personnes], meteo: QF.meteo, obs: QF.obs, photos: QF.photos };
     if (iv) Object.assign(iv, data);
     else { iv = { id: uid('iv'), campagne: camp, parcelleId: pid, statut: 'planifiee', surface: p.surface, ...data }; S.interventions.push(iv); }
     if (QF.type === 'recolte' && QF.statut === 'realisee') iv.recolteQte = r2(recolte * p.surface / surfTot, 2);
@@ -877,11 +1012,11 @@ DRAWERS.stock = id => {
   const outs = months.map(mo => r2(sum(mv.filter(x => x.date.startsWith(mo.key) && ['sortie', 'perte'].includes(x.type)), x => x.qte), 2));
   const ins = months.map(mo => r2(sum(mv.filter(x => x.date.startsWith(mo.key) && x.type === 'entree'), x => x.qte), 2));
   const isProd = i.cat === 'production';
-  const actions = isProd ? [['newSale', 'euro', 'Vendre', 'var(--c-vente)', { item: i.id }], ['stockOut', 'minus', 'Sortie', 'var(--c-stock)', { id: i.id }], ['stockCount', 'clipboard', 'Inventaire', 'var(--c-eco)', { id: i.id }], ['stockMove', 'move', 'Déplacer', 'var(--c-mat)', { item: i.id, type: 'transfert' }]]
-    : [['stockIn', 'plus', 'Entrée', 'var(--c-cult)', { id: i.id }], ['stockOut', 'minus', 'Sortie', 'var(--c-stock)', { id: i.id }], ['stockCount', 'clipboard', 'Inventaire', 'var(--c-eco)', { id: i.id }], ['stockMove', 'move', 'Déplacer', 'var(--c-mat)', { item: i.id, type: 'transfert' }]];
+  const actions = isProd ? [['newSale', 'euro', 'Vendre', 'var(--c-vente)', { item: i.id }], ['stockOut', 'minus', 'Sortie', 'var(--c-stock)', { id: i.id }], ['stockFix', 'edit', 'Corriger', 'var(--c-eco)', { id: i.id }], ['stockMove', 'move', 'Déplacer', 'var(--c-mat)', { item: i.id, type: 'transfert' }]]
+    : [['stockIn', 'plus', 'Entrée', 'var(--c-cult)', { id: i.id }], ['stockOut', 'minus', 'Sortie', 'var(--c-stock)', { id: i.id }], ['stockFix', 'edit', 'Corriger', 'var(--c-eco)', { id: i.id }], ['stockMove', 'move', 'Déplacer', 'var(--c-mat)', { item: i.id, type: 'transfert' }]];
   const h = isProd ? harvestInfo(i) : null;
   return {
-    title: esc(i.nom), actions: `<button class="btn g icon" data-a="stockMenu" data-id="${i.id}" aria-label="Plus d’actions">${ic('dots')}</button>`, body: `<div class="st-sheet" style="--c:${isProd ? CULTURES[i.culture]?.color || m.color : m.color}"><div class="row"><span class="st-ic big">${ic(m.icon)}</span><div style="flex:1;min-width:0"><small>${m.label}${i.variete ? ' · variété ' + esc(i.variete) : ''}${i.lot ? ' · lot ' + esc(i.lot) : ''}</small><div class="st-big ${l?.state || ''}">${nfx(i.qte, 2)} <span>${i.unite}</span></div><small>${esc(i.emplacement || '—')}</small></div><div style="text-align:right"><small>${isProd ? 'Valeur théorique' : 'Valeur'}</small><span style="display:block;font-size:13.5px;font-weight:700;color:var(--text-2)">${v == null ? '—' : eur(v)}</span><small>${isProd ? (refPrice(i.culture) != null ? `${eur(refPrice(i.culture))}/t` : 'pas de cours') : `${eur(i.pmp, i.pmp < 10 ? 3 : 2)}/${i.unite}`}</small></div></div>
+    title: esc(i.nom), actions: `<button class="btn g icon" data-a="stockMenu" data-id="${i.id}" aria-label="Plus d’actions">${ic('dots')}</button>`, body: `<div class="st-sheet" style="--c:${isProd ? CULTURES[i.culture]?.color || m.color : m.color}"><div class="row"><span class="st-ic big">${ic(m.icon)}</span><div style="flex:1;min-width:0"><small>${m.label}${i.variete ? ' · variété ' + esc(i.variete) : ''}${i.lot ? ' · lot ' + esc(i.lot) : ''}</small><div class="st-big ${l?.state || ''}" data-a="stockFix" data-id="${i.id}" style="cursor:pointer" title="Corriger">${nfx(i.qte, 2)} <span>${i.unite}</span> <span class="fix-hint">${ic('edit')}</span></div><small>${esc(i.emplacement || '—')}</small></div><div style="text-align:right"><small>${isProd ? 'Valeur théorique' : 'Valeur'}</small><span style="display:block;font-size:13.5px;font-weight:700;color:var(--text-2)">${v == null ? '—' : eur(v)}</span><small>${isProd ? (refPrice(i.culture) != null ? `${eur(refPrice(i.culture))}/t` : 'pas de cours') : `${eur(i.pmp, i.pmp < 10 ? 3 : 2)}/${i.unite}`}</small></div></div>
       ${gauge(i, true)}${l && l.ratio != null ? `<div class="row small" style="justify-content:space-between;margin-top:6px"><span>${l.state === 'ok' ? 'Niveau correct' : l.state === 'warn' ? 'Sous le seuil d’alerte' : 'Épuisé'}</span><span class="muted">seuil ${qty(i.seuil, i.unite)}${i.capacite ? ` · capacité ${qty(i.capacite, i.unite)}` : ''}</span></div>` : ''}
       ${h ? `<div class="silo-bar" style="margin-top:12px"><i style="width:${h.inQ ? Math.min(100, h.sold / h.inQ * 100) : 0}%"></i></div><div class="small muted" style="margin-top:4px">${nf(h.sold, 1)} t vendues sur ${nf(h.inQ, 1)} t récoltées</div>` : ''}</div>
     <div class="st-acts">${actions.map(([a, ico, lab, c, data]) => `<button style="--c:${c}" data-a="${a}" ${Object.entries(data).map(([k, x]) => `data-${k}="${x}"`).join(' ')}><span>${ic(ico)}</span>${lab}</button>`).join('')}</div>
@@ -990,9 +1125,9 @@ ACT.stockOut = d => {
     }
   });
 };
-ACT.stockMenu = d => { const i = byId('stock', d.id); const lastManual = S.mouvements.filter(m => m.itemId === i.id && !m.refKind).sort((a, b) => b.date.localeCompare(a.date) || 0).at(-1) && S.mouvements.filter(m => m.itemId === i.id && !m.refKind).at(-1); openModal({ title: esc(i.nom), body: `<div class="card">${[['stockFix', 'edit', 'Corriger la quantité ou le prix', 'Remplace le chiffre affiché par le bon'], ['editItem', 'settings', 'Modifier le produit', 'Nom, variété, unité, seuil, capacité, emplacement'], ...(lastManual ? [['stockUndo', 'chevL', 'Annuler le dernier mouvement', `${MOVE_TYPES[lastManual.type]} de ${qty(Math.abs(lastManual.qte), i.unite)} du ${dshort(lastManual.date)}`]] : []), ['stockDel', 'trash', 'Supprimer le produit', i.qte ? 'Possible uniquement à stock nul' : 'Retire le produit de la liste']].map(([a, ico, l, sub]) => `<div class="mrow" data-a="${a}" data-id="${i.id}"><div class="ic">${ic(ico)}</div><div class="tx"><b>${l}</b><span>${sub}</span></div>${ic('chevR')}</div>`).join('')}</div>`, foot: '' }); };
+ACT.stockMenu = d => { const i = byId('stock', d.id); const lastManual = S.mouvements.filter(m => m.itemId === i.id && !m.refKind).sort((a, b) => b.date.localeCompare(a.date) || 0).at(-1) && S.mouvements.filter(m => m.itemId === i.id && !m.refKind).at(-1); openModal({ title: esc(i.nom), body: `<div class="card">${[['stockFix', 'edit', 'Corriger la quantité ou le prix', 'Remplace le chiffre affiché par le bon'], ['stockCount', 'clipboard', 'Inventaire (comptage)', 'Saisir la quantité comptée'], ['editItem', 'settings', 'Modifier le produit', 'Nom, variété, unité, seuil, capacité, emplacement'], ...(lastManual ? [['stockUndo', 'chevL', 'Annuler le dernier mouvement', `${MOVE_TYPES[lastManual.type]} de ${qty(Math.abs(lastManual.qte), i.unite)} du ${dshort(lastManual.date)}`]] : []), ['stockDel', 'trash', 'Supprimer le produit', i.qte ? 'Possible uniquement à stock nul' : 'Retire le produit de la liste']].map(([a, ico, l, sub]) => `<div class="mrow" data-a="${a}" data-id="${i.id}"><div class="ic">${ic(ico)}</div><div class="tx"><b>${l}</b><span>${sub}</span></div>${ic('chevR')}</div>`).join('')}</div>`, foot: '' }); };
 ACT.stockFix = d => {
-  const it = byId('stock', d.id); closeModal();
+  const it = byId('stock', d.id); if (MODAL) closeModal();
   setTimeout(() => {
     QTY_LIVE = q => { const diff = r2(q - it.qte, 3); return Math.abs(diff) < 1e-6 ? `Quantité actuelle : ${qty(it.qte, it.unite)}` : `Correction : <b style="color:${diff < 0 ? 'var(--late)' : 'var(--c-cult)'}">${diff > 0 ? '+' : ''}${qty(diff, it.unite)}</b>`; };
     openModal({ title: `Corriger · ${esc(it.nom)}`, body: `<p class="small muted" style="margin-top:0">Indiquez la bonne quantité en stock.</p>${qtyField(it.unite, String(r2(it.qte, 3)).replace('.', ','))}<div class="qty-live" id="qtyLive">Quantité actuelle : ${qty(it.qte, it.unite)}</div>
