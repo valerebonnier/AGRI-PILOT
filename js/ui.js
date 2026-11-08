@@ -2,7 +2,7 @@
 /* =====================================================================
    AGRI PILOT — Interface : icônes, formats, graphiques, structure, routeur
    ===================================================================== */
-const APP_VERSION = '2026.11.08-v22';
+const APP_VERSION = '2026.11.08-v23';
 const ICONS = {
   home: '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>',
   farm: '<path d="M3 21V10l9-6 9 6v11M9 21v-6h6v6M2 21h20"/>',
@@ -147,6 +147,10 @@ function sparkline(vals, color = 'var(--primary)', w = 90, h = 28) {
 }
 
 /* ---------- État d'interface ---------- */
+/** Modules masqués pour l'instant (matériel et partie économique) : le code et les données restent en place. */
+const HIDDEN_MODS = ['materiel', 'economie', 'ventes'];
+const modOn = r => !HIDDEN_MODS.includes(r);
+const HIDDEN_WIDGETS = ['kpis', 'marges', 'ca', 'charges', 'stocks', 'cours'];
 const ROUTES = [
   ['dashboard', 'Tableau de bord', 'home', 'Pilotage'],
   ['taches', 'Tâches', 'todo', 'Pilotage'],
@@ -213,7 +217,8 @@ function shell() {
   const todo = todoList();
   const urgent = todo.filter(t => t.urgence !== 'ok').length;
   const groups = {};
-  ROUTES.forEach(r => (groups[r[3]] = groups[r[3]] || []).push(r));
+  ROUTES.filter(r => modOn(r[0])).forEach(r => (groups[r[3]] = groups[r[3]] || []).push(r));
+  if (!modOn(UI.route)) UI.route = 'dashboard';
   const byCat = c => todo.filter(t => t.cat === c && t.urgence !== 'ok').length;
   const cnt = { taches: urgent, interventions: byCat('cultures'), stocks: byCat('stocks'), materiel: byCat('materiel'), ventes: byCat('ventes'), pac: byCat('admin'), documents: byCat('documents') };
   const r = ROUTES.find(x => x[0] === UI.route) || (UI.route === 'plus' ? ['plus', 'Menu'] : ROUTES[0]);

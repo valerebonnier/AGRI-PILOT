@@ -48,7 +48,7 @@ function initLeaflet() {
   else if (realParcels().length) LMAP.fitBounds(L.latLngBounds(realParcels().flatMap(p => p.coords)), { padding: [30, 30] });
   else LMAP.setView([46.6, 2.4], 6);
   LMAP.on('moveend', () => { UI.mapView = { c: LMAP.getCenter(), z: LMAP.getZoom() }; });
-  LMAP.on('click', e => { if (EDIT && EDIT.mode === 'draw') { EDIT.pts.push([r2(e.latlng.lat, 7), r2(e.latlng.lng, 7)]); EDIT.sel = EDIT.pts.length - 1; renderEdit(); } });
+  LMAP.on('click', e => { if (EDIT && EDIT.mode === 'place') { proposeAt(e.latlng.lat, e.latlng.lng); return; } if (EDIT && EDIT.mode === 'draw') { EDIT.pts.push([r2(e.latlng.lat, 7), r2(e.latlng.lng, 7)]); EDIT.sel = EDIT.pts.length - 1; renderEdit(); } });
   if (EDIT) renderEdit();
   setTimeout(() => LMAP && LMAP.invalidateSize(), 60); setTimeout(() => LMAP && LMAP.invalidateSize(), 400);
   try { if (window.ResizeObserver) { const ro = new ResizeObserver(() => { if (LMAP) LMAP.invalidateSize(); }); ro.observe(el); LMAP.on('unload', () => ro.disconnect()); } } catch (e) { }
@@ -82,28 +82,58 @@ function renderEdit() {
 }
 function updateEditPanel() {
   const el = document.getElementById('editPanel'); if (!el || !EDIT) return;
+  if (EDIT.mode === 'place') { const p = byId('parcelles', EDIT.pid); el.innerHTML = `<div class="ep-h"><div><b>${esc(p.nom)} · ${nf(p.surface, 2)} ha</b><span>${EDIT.busy ? 'Recherche du contour…' : 'Touchez le champ sur la carte : un tracé vous est proposé, puis vous l’ajustez.'}</span></div></div><div class="ep-tip">${ic('search')}<span>Trouvez d’abord le champ : recherche de commune en haut, ou ${ic('pin')} ma position, puis zoomez.</span></div><div class="ep-b"><button class="btn icon" data-a="edCancel" aria-label="Abandonner">${ic('x')}</button><button class="btn" data-a="edDrawSelf">${ic('edit')} Je dessine moi-même</button></div>`; return; }
   const p = EDIT.pid ? byId('parcelles', EDIT.pid) : null; const n = EDIT.pts.length; const a = n >= 3 ? areaHa(EDIT.pts) : 0;
-  el.innerHTML = `<div class="ep-h"><div><b>${p ? esc(p.nom) : 'Nouvelle parcelle'}</b><span>${EDIT.mode === 'draw' ? 'Touchez la carte pour placer les sommets' : 'Déplacez les points · « + » ajoute un point'}</span></div><div class="ep-a"><b>${nf(a, 2)} ha</b><span>${n} point${n > 1 ? 's' : ''}${p ? ` · déclarée ${nf(p.surface, 2)} ha` : ''}</span></div></div>
+  el.innerHTML = `${EDIT.proposed ? `<div class="ep-prop">${ic('sparkles')}<span>${EDIT.proposed === 'rpg' ? 'Contour proposé d’après le registre parcellaire (RPG, IGN). Vérifiez-le et ajustez les points.' : `Rectangle de ${nf(p?.surface || 0, 2)} ha proposé à l’endroit touché : déplacez les coins sur les limites du champ.`}</span></div>` : ''}<div class="ep-h"><div><b>${p ? esc(p.nom) : 'Nouvelle parcelle'}</b><span>${EDIT.mode === 'draw' ? 'Touchez la carte pour placer les sommets' : 'Déplacez les points · « + » ajoute un point'}</span></div><div class="ep-a"><b>${nf(a, 2)} ha</b><span>${n} point${n > 1 ? 's' : ''}${p ? ` · déclarée ${nf(p.surface, 2)} ha` : ''}</span></div></div>
   <div class="ep-b"><button class="btn icon" data-a="edCancel" aria-label="Abandonner">${ic('x')}</button>${EDIT.mode === 'draw' ? `<button class="btn icon" data-a="edUndo" aria-label="Retirer le dernier point" ${n ? '' : 'disabled'}>${ic('chevL')}</button>` : ''}<button class="btn" data-a="edDelPt" aria-label="Supprimer le point sélectionné" ${EDIT.sel != null && n > 3 ? '' : 'disabled'}>${ic('trash')}${EDIT.sel != null ? ` n° ${EDIT.sel + 1}` : ''}</button><button class="btn p" data-a="edDone" ${n >= 3 ? '' : 'disabled'}>${ic('check')} Valider</button></div>`;
 }
 function startContour(pid) {
   const p = pid ? byId('parcelles', pid) : null;
   const fresh = !p || p.contourProvisoire || !(p.coords?.length >= 3);
-  EDIT = { pid: pid || null, mode: fresh ? 'draw' : 'edit', pts: fresh ? [] : p.coords.map(c => [...c]), sel: null };
+  EDIT = { pid: pid || null, mode: fresh ? (p ? 'place' : 'draw') : 'edit', pts: fresh ? [] : p.coords.map(c => [...c]), sel: null };
   UI.tabs.parc = 'carte'; closeDrawer();
   if (!fresh) UI.mapView = { c: L.latLngBounds(p.coords).getCenter(), z: Math.max(15, UI.mapView?.z || 15) };
   if (UI.route !== 'parcellaire') go('parcellaire'); else render();
-  if (fresh) toast(p ? `Placez les sommets de « ${p.nom} » en touchant la carte` : 'Touchez la carte pour placer les sommets de la parcelle');
+  if (fresh && !p) toast('Touchez la carte pour placer les sommets de la parcelle');
 }
 ACT.edUndo = () => { EDIT.pts.pop(); EDIT.sel = EDIT.pts.length ? EDIT.pts.length - 1 : null; renderEdit(); };
 ACT.edDelPt = () => { if (EDIT.sel == null || EDIT.pts.length <= 3) return; EDIT.pts.splice(EDIT.sel, 1); EDIT.sel = null; renderEdit(); };
 ACT.edCancel = () => { EDIT = null; render(); };
+ACT.edDrawSelf = () => { EDIT.mode = 'draw'; EDIT.pts = []; renderEdit(); toast('Touchez la carte pour placer les sommets'); };
+/* ---- Proposition de contour : parcelle du registre parcellaire graphique (RPG) sous le point touché, sinon rectangle de la surface déclarée ---- */
+function pip(pt, ring) { let inside = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const [yi, xi] = ring[i], [yj, xj] = ring[j]; if (((yi > pt[0]) !== (yj > pt[0])) && (pt[1] < (xj - xi) * (pt[0] - yi) / (yj - yi) + xi)) inside = !inside; } return inside; }
+function simplifyRing(r, max = 48) { if (r.length > 1 && r[0][0] === r[r.length - 1][0] && r[0][1] === r[r.length - 1][1]) r = r.slice(0, -1); if (r.length <= max) return r; const k = r.length / max; return [...Array(max)].map((_, i) => r[Math.floor(i * k)]); }
+async function rpgAt(lat, lng) {
+  const d = 0.00003, types = ['RPG.LATEST:parcelles_graphiques', 'RPG.2023:parcelles_graphiques'];
+  for (const t of types) {
+    try {
+      const u = `https://data.geopf.fr/wfs/ows?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=${t}&OUTPUTFORMAT=application/json&SRSNAME=CRS:84&COUNT=5&BBOX=${lng - d},${lat - d},${lng + d},${lat + d},CRS:84`;
+      const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 7000);
+      const r = await fetch(u, { signal: ctl.signal }); clearTimeout(to); if (!r.ok) continue;
+      const j = await r.json();
+      for (const f of j.features || []) { const g = f.geometry || {}; const polys = g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : []; for (const pg of polys) { const ring = (pg[0] || []).map(([x, y]) => [r2(y, 7), r2(x, 7)]); if (ring.length >= 4 && pip([lat, lng], ring)) return simplifyRing(ring); } }
+    } catch (e) { }
+  }
+  return null;
+}
+function rectAt(lat, lng, ha) { const side = Math.sqrt(Math.max(ha, 0.05) * 10000), dla = side / 2 / 110540, dln = side / 2 / (111320 * Math.cos(lat * Math.PI / 180)); return [[lat - dla, lng - dln], [lat - dla, lng + dln], [lat + dla, lng + dln], [lat + dla, lng - dln]].map(c => c.map(v => r2(v, 7))); }
+async function proposeAt(lat, lng) {
+  if (!EDIT || EDIT.busy) return;
+  if (LMAP.getZoom() < 14) { toast('Zoomez davantage sur le champ avant de le toucher', 'warn'); LMAP.setView([lat, lng], 16); return; }
+  const p = byId('parcelles', EDIT.pid); EDIT.busy = true; updateEditPanel();
+  const rpg = await rpgAt(lat, lng); if (!EDIT) return;
+  EDIT.busy = false; EDIT.mode = 'edit'; EDIT.pts = rpg || rectAt(lat, lng, p?.surface || 1); EDIT.proposed = rpg ? 'rpg' : 'rect'; EDIT.sel = null;
+  renderEdit(); try { LMAP.fitBounds(L.latLngBounds(EDIT.pts), { padding: [60, 60], maxZoom: 18 }); } catch (e) { }
+}
+/* ---- Commune et référence cadastrale proposées d'après la position (géocodage inverse IGN) ---- */
+async function revGeo(lat, lng) { try { const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 6000); const r = await fetch(`https://data.geopf.fr/geocodage/reverse?lon=${lng}&lat=${lat}&index=parcel&limit=1`, { signal: ctl.signal }); clearTimeout(to); const pr = (await r.json()).features?.[0]?.properties; if (!pr) return null; return { commune: pr.city || '', cadastre: pr.section ? `${pr.section} ${String(pr.number || '').replace(/^0+/, '')}` : '' }; } catch (e) { return null; } }
+async function autoCommune(p) { if (!p || (p.commune && p.cadastre) || !(p.coords?.length >= 3)) return; const c = centroid(p.coords); const g = await revGeo(c[0], c[1]); if (!g) return; const set = []; if (!p.commune && g.commune) { p.commune = g.commune; set.push(`commune ${g.commune}`); } if (!p.cadastre && g.cadastre) { p.cadastre = g.cadastre; set.push(`cadastre ${g.cadastre}`); } if (set.length) { saveState(); render(); toast(`${p.nom} : ${set.join(', ')} (d’après la position, modifiable)`); } }
 ACT.edDone = () => {
   const pts = EDIT.pts; if (pts.length < 3) return;
   const area = areaHa(pts);
   if (!EDIT.pid) { EDIT = null; render(); parcForm(null, { coords: pts, surface: area }); return; }
   const p = byId('parcelles', EDIT.pid); EDIT = null;
-  p.coords = pts; p.centre = centroid(pts); p.contourProvisoire = false;
+  p.coords = pts; p.centre = centroid(pts); p.contourProvisoire = false; setTimeout(() => autoCommune(p), 300);
   if (Math.abs(area - p.surface) >= 0.01) {
     openModal({ title: 'Mettre à jour la surface ?', body: `<p>Surface mesurée sur la carte : <b>${nf(area, 2)} ha</b><br>Surface déclarée actuelle : <b>${nf(p.surface, 2)} ha</b></p><div class="note">${ic('info')}<span>La surface déclarée sert aux calculs (doses, coûts, rendements). Gardez-la si elle provient d’un document officiel (PAC, bail).</span></div>`, submit: `Utiliser ${nf(area, 2)} ha`, foot: `<button type="button" class="btn" data-a="edKeep">Garder ${nf(p.surface, 2)} ha</button><button class="btn p" type="submit" form="mf">Utiliser ${nf(area, 2)} ha</button>`, onSubmit: () => { p.surface = area; S.interventions.filter(i => i.parcelleId === p.id && i.statut === 'planifiee').forEach(i => { i.surface = area; }); commit(`Contour et surface enregistrés (${nf(area, 2)} ha)`); } });
     saveState(); render();

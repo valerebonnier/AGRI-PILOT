@@ -53,6 +53,7 @@ const OB_FAMILLES = [
 ];
 const OB_CULTURES = OB_FAMILLES.flatMap(f => f[1]);
 const OB_STEPS = [['profil', 'Vous'], ['ferme', 'Ma ferme'], ['productions', 'Mes productions'], ['itk', 'Mes itinéraires'], ['repartition', 'Mes surfaces'], ['parcelles', 'Mes parcelles'], ['materiel', 'Mon matériel'], ['forfait', 'Mon forfait'], ['options', 'Options'], ['recap', 'C’est prêt']];
+OB_STEPS.splice(0, OB_STEPS.length, ...OB_STEPS.filter(x => x[0] !== 'materiel' || modOn('materiel')));
 const obIdx = k => OB_STEPS.findIndex(x => x[0] === k);
 const ROLES_OB = [['exploitant', 'Chef·fe d’exploitation', 'farm'], ['associe', 'Associé·e', 'users'], ['salarie', 'Salarié·e', 'tractor'], ['conseil', 'Conseiller·e / comptable', 'chart']];
 const OB_KEY = 'agripilot.onboarding.v3';
@@ -184,7 +185,7 @@ function obRecap() {
   <div class="card"><div class="mrow" data-a="obGo" data-s="${obIdx('ferme')}"><div class="ic">${ic('farm')}</div><div class="tx"><b>${esc(OB.nom)}</b><span>${esc(OB.forme)} · ${esc(OB.dept)}</span></div>${ic('edit')}</div>
   <div class="mrow" data-a="obGo" data-s="${obIdx('repartition')}" style="--c:var(--c-cult)"><div class="ic">${ic('layers')}</div><div class="tx"><b>Assolement ${campLabel(CURRENT_CAMP)} · ${nf(obRepTot(), 1)} ha</b><span>${OB.cultures.map(c => `${CULTURES[c].nom} ${nf(+OB.rep[c] || 0, 1)} ha`).join(' · ')}</span></div>${ic('edit')}</div>
   <div class="mrow" data-a="obGo" data-s="${obIdx('parcelles')}" style="--c:var(--c-cult)"><div class="ic">${ic('map')}</div><div class="tx"><b>${OB.parcelles.length} parcelle(s) · ${nf(obSurf(), 1)} ha placés</b><span>${byC.map(x => `${CULTURES[x.k].nom} ${nf(x.s, 1)} ha`).join(' · ') || 'Parcelles à créer plus tard'}</span></div>${ic('edit')}</div>
-  <div class="mrow" data-a="obGo" data-s="${obIdx('materiel')}" style="--c:var(--c-mat)"><div class="ic">${ic('tractor')}</div><div class="tx"><b>${matUnits().length} matériel(s)</b><span>${matUnits().map(u => MAT_PRESETS[u.k].label).join(', ') || 'À ajouter plus tard'}</span></div>${ic('edit')}</div></div>
+  ${!modOn('materiel') ? '' : `<div class="mrow" data-a="obGo" data-s="${obIdx('materiel')}" style="--c:var(--c-mat)"><div class="ic">${ic('tractor')}</div><div class="tx"><b>${matUnits().length} matériel(s)</b><span>${matUnits().map(u => MAT_PRESETS[u.k].label).join(', ') || 'À ajouter plus tard'}</span></div>${ic('edit')}</div>`}</div>
   <div class="card mt"><div class="mrow" data-a="obGo" data-s="${obIdx('forfait')}" style="--c:var(--primary)"><div class="ic">${ic('star')}</div><div class="tx"><b>Forfait ${esc(PLANS[OB.plan]?.nom || '—')} · ${OB.cycle === 'annuel' ? 'annuel' : 'mensuel'}</b><span>${OB.options.length ? OB.options.map(o => OPTIONS[o]?.nom).join(', ') : 'Sans option'} · essai gratuit ${ESSAI_J} jours</span></div>${ic('edit')}</div></div>
   <div class="card mt"><div class="mrow" data-a="obToggle" style="--c:var(--c-cult)"><div class="ic">${ic('calendar')}</div><div class="tx" style="white-space:normal"><b>Préparer mon calendrier de travaux</b><span style="white-space:normal">Crée les prochaines interventions à partir des itinéraires types (à partir d’aujourd’hui, rien n’est daté dans le passé).</span></div><button class="switch ${OB.genTasks ? 'on' : ''}" tabindex="-1"></button></div></div>
   <div class="note mt">${ic('info')}<span>Vos données restent sur cet appareil. Pensez à exporter régulièrement depuis Paramètres ; la sauvegarde en ligne arrive avec l’étape 2.</span></div>`;
@@ -251,7 +252,7 @@ const ESSAI_J = 30;
 const eur2 = v => `${nf(v, v % 1 ? 2 : 0)} €`;
 const PLANS = {
   decouverte: { nom: 'Découverte', prix: 0, accroche: 'Pour démarrer', color: '#5B6B7A', limite: 'Jusqu’à 30 ha · 1 utilisateur', modules: ['dashboard', 'taches', 'exploitation', 'parcellaire', 'itk', 'interventions', 'stocks', 'documents', 'parametres'], points: ['Carte satellite et parcellaire', 'Interventions et itinéraires', 'Stocks d’intrants', 'Tâches et rappels'] },
-  essentiel: { nom: 'Essentiel', prix: 20, accroche: 'Le plus choisi', color: '#1C6A47', limite: 'Surface illimitée · 3 utilisateurs', modules: ['assolement', 'materiel', 'ventes', 'economie', 'pac'], points: ['Tout Découverte', 'Assolement et mouvements de terres', 'Parc matériel et entretiens', 'Ventes, achats, marges et coûts', 'Préparation PAC'] },
+  essentiel: { nom: 'Essentiel', prix: 20, accroche: 'Le plus choisi', color: '#1C6A47', limite: 'Surface illimitée · 3 utilisateurs', modules: ['assolement', 'materiel', 'ventes', 'economie', 'pac'], points: ['Tout Découverte', 'Assolement et mouvements de terres', 'Plusieurs cultures par champ', 'Préparation PAC'] },
   pro: { nom: 'Pro', prix: 40, accroche: 'Pour les équipes', color: '#7A5BD6', limite: 'Surface et utilisateurs illimités', modules: ['equipe'], points: ['Tout Essentiel', 'Main-d’œuvre et planning des salariés', 'Toutes les options incluses*', 'Assistance prioritaire'] },
 };
 const PLAN_ORDER = ['decouverte', 'essentiel', 'pro'];

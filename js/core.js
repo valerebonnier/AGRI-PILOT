@@ -493,7 +493,7 @@ function todoList(horizon = 21) {
     const d = dueInfo(i.date); if (d.j > horizon) return;
     out.push({ kind: 'intervention', cat: 'cultures', icon: IV_ICON[i.type] || 'sprout', sub: INTER_TYPES[i.type], id: i.id, date: i.date, titre: `${i.label} — ${byId('parcelles', i.parcelleId)?.nom}`, detail: `${fmtQ(i.surface)} ha${i.produits.length ? ' · ' + i.produits.map(x => byId('stock', x.itemId)?.nom).filter(Boolean).join(', ') : ''}`, action: 'Valider', ...d });
   });
-  S.materiel.forEach(m => {
+  if (typeof modOn !== 'function' || modOn('materiel')) S.materiel.forEach(m => {
     if (m.panne) out.push({ kind: 'maintenance', cat: 'materiel', icon: 'alert', sub: 'Panne', id: `${m.id}|panne`, date: m.panne.date, titre: m.panne.titre, detail: `${m.marque} ${m.modele}${m.panne.immo ? ' · immobilisé' : ''}`, action: 'Réparé', j: 0, urgence: m.panne.immo ? 'danger' : 'warn', groupe: m.panne.immo ? 'retard' : 'jour', echeance: m.panne.immo ? `Immobilisé · ${daysBetween(m.panne.date, TODAY)} j` : 'À surveiller' });
     matPlanDue(m).forEach(n => {
       let d;
@@ -505,7 +505,7 @@ function todoList(horizon = 21) {
     });
   });
   S.stock.filter(i => i.cat !== 'production' && i.seuil > 0 && i.qte <= i.seuil).forEach(i => out.push({ kind: 'stock', cat: 'stocks', icon: 'box', sub: 'Réapprovisionnement', id: i.id, date: TODAY, titre: i.nom, detail: `${fmtQ(i.qte)} ${i.unite} restants · seuil ${fmtQ(i.seuil)} ${i.unite}`, action: 'Commander', j: 0, urgence: i.qte <= 0 ? 'danger' : 'warn', groupe: i.qte <= 0 ? 'retard' : 'jour', echeance: i.qte <= 0 ? 'Épuisé' : 'Stock faible' }));
-  S.ventes.filter(v => v.statut !== 'paye').forEach(v => { const age = daysBetween(v.date, TODAY); const due = addDays(v.date, 30); const d = dueInfo(due); out.push({ kind: 'encaissement', cat: 'ventes', icon: 'euro', sub: 'Encaissement', id: v.id, date: due, titre: `${v.facture} — ${v.acheteur}`, detail: `${fmtQ(v.montant)} € · ${v.statut === 'partiel' ? 'règlement partiel' : 'facturée il y a ' + age + ' j'}`, action: 'Encaissé', ...d, echeance: d.j < 0 ? `Échue · ${-d.j} j` : d.echeance }); });
+  if (typeof modOn !== 'function' || modOn('ventes')) S.ventes.filter(v => v.statut !== 'paye').forEach(v => { const age = daysBetween(v.date, TODAY); const due = addDays(v.date, 30); const d = dueInfo(due); out.push({ kind: 'encaissement', cat: 'ventes', icon: 'euro', sub: 'Encaissement', id: v.id, date: due, titre: `${v.facture} — ${v.acheteur}`, detail: `${fmtQ(v.montant)} € · ${v.statut === 'partiel' ? 'règlement partiel' : 'facturée il y a ' + age + ' j'}`, action: 'Encaissé', ...d, echeance: d.j < 0 ? `Échue · ${-d.j} j` : d.echeance }); });
   S.echeances.filter(e => !e.fait).forEach(e => { const d = dueInfo(e.date); if (d.j > Math.max(horizon, 120)) return; out.push({ kind: 'echeance', cat: e.cat === 'Matériel' ? 'materiel' : 'admin', icon: e.cat === 'PAC' ? 'landmark' : 'calendar', sub: e.cat, id: e.id, date: e.date, titre: e.titre, detail: e.note || '', action: 'Fait', ...d }); });
   S.documents.filter(d => d.statut === 'a_completer').forEach(d => out.push({ kind: 'document', cat: 'documents', icon: 'file', sub: d.cat, id: d.id, date: TODAY, titre: d.nom, detail: 'Document à compléter', action: 'Ouvrir', j: 0, urgence: 'warn', groupe: 'jour', echeance: 'À compléter' }));
   const rank = { danger: 0, warn: 1, ok: 2 };

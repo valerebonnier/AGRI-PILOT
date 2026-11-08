@@ -1154,3 +1154,13 @@ details.more summary{cursor:pointer;font-weight:700;font-size:13px;color:var(--p
 .pc-g{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px}
 .pc-t{display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:var(--surface);font:inherit;font-weight:650;font-size:13px;color:var(--text);cursor:pointer;text-align:left}.pc-t .sw{width:10px;height:10px;border-radius:3px;background:var(--c);flex:none}.pc-t.on{border-color:var(--c);background:color-mix(in srgb,var(--c) 14%,var(--surface));box-shadow:inset 0 0 0 1px var(--c)}
 .btn.on{background:var(--surface-3)}
+/* opération : quand / note */
+.qf-heure{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.qf-heure button{border:1px solid var(--border);background:var(--surface);border-radius:99px;padding:6px 12px;font:inherit;font-size:12.5px;font-weight:650;color:var(--text-2);cursor:pointer}.qf-heure button.on{background:var(--primary-soft);border-color:var(--primary);color:var(--primary)}.qf-heure input{width:auto;height:34px;border-radius:99px;font-size:12.5px}
+.qf-note{min-height:64px;resize:vertical}
+.qf-tags{display:flex;gap:6px;overflow-x:auto;margin-top:8px;scrollbar-width:none}.qf-tags button{flex:none;border:1px dashed var(--border);background:none;border-radius:99px;padding:5px 10px;font:inherit;font-size:12px;color:var(--text-2);cursor:pointer}
+.tk-note{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-2);background:var(--surface-3);border-radius:8px;padding:4px 8px;margin-top:4px;white-space:normal}.tk-note svg{width:13px;height:13px;flex:none}
+.ivc-note{color:var(--text-2)!important;font-style:italic}
+.iv-note{border-left:4px solid var(--primary)}
+.ep-tip{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-2);background:var(--surface-3);border-radius:10px;padding:7px 10px;margin:8px 0}.ep-tip svg{width:14px;height:14px;flex:none}
+.ep-prop{display:flex;gap:8px;align-items:flex-start;font-size:12px;background:var(--primary-soft);color:var(--primary);border-radius:10px;padding:7px 10px;margin-bottom:8px;font-weight:600}.ep-prop svg{width:15px;height:15px;flex:none;margin-top:1px}
+.geo-hint{color:var(--primary)!important}
