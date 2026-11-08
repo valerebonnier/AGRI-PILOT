@@ -20,7 +20,7 @@ const hasLeaflet = () => typeof window.L !== 'undefined' && navigator.onLine !==
 function mapLeafletHTML() {
   const base = PREFS.mapBase || 'sat', ov = PREFS.mapOv || [];
   return `<div class="lmap-wrap"><div id="lmap"></div>
-    <div class="lmap-ctl top"><div class="seg">${Object.entries(MAP_BASES).map(([k, b]) => `<button class="${base === k ? 'on' : ''}" data-a="mapBase" data-k="${k}">${b.label}</button>`).join('')}</div>
+    <div class="lmap-ctl ltop"><div class="seg">${Object.entries(MAP_BASES).map(([k, b]) => `<button class="${base === k ? 'on' : ''}" data-a="mapBase" data-k="${k}">${b.label}</button>`).join('')}</div>
       ${Object.entries(MAP_OVERLAYS).map(([k, o]) => `<button class="lchip ${ov.includes(k) ? 'on' : ''}" data-a="mapOv" data-k="${k}">${o.label}</button>`).join('')}</div>
     <div class="lmap-ctl rside"><button class="lbtn" data-a="mapSearch" aria-label="Rechercher un lieu">${ic('search')}</button><button class="lbtn" data-a="mapLocate" aria-label="Ma position">${ic('pin')}</button><button class="lbtn" data-a="mapFit" aria-label="Voir toutes les parcelles">${ic('map')}</button></div>
   </div>`;

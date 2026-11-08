@@ -101,7 +101,12 @@ const QUICK_ACTIONS = [
   { k: 'charge', l: 'Charge', s: 'Fermage, assurance…', i: 'cart', c: 'var(--c-eco)' },
   { k: 'doc', l: 'Document', s: 'Justificatif, contrat…', i: 'file', c: 'var(--c-doc)' },
 ];
-ACT.actionSheet = () => openModal({ title: 'Que voulez-vous saisir ?', body: `<div class="act-grid">${QUICK_ACTIONS.map(q => `<button type="button" class="act-btn" style="--c:${q.c}" data-a="qa" data-k="${q.k}"><span class="ti">${ic(q.i)}</span><span><b>${q.l}</b><span>${q.s}</span></span></button>`).join('')}</div>`, foot: '' });
+const SHEET = {
+  stock: { l: 'Stock', c: 'var(--c-stock)', i: 'box', items: [['achat', 'Entrée', 'plus', 'Livraison, achat, stock existant'], ['sortie', 'Sortie', 'minus', 'Utilisation, perte, cession'], ['corriger', 'Corriger', 'edit', 'Rectifier une quantité'], ['vente', 'Vendre une récolte', 'euro', 'Sortie de stock + chiffre d’affaires']] },
+  divers: { l: 'Divers', c: 'var(--c-mat)', i: 'dots', items: [['entretien', 'Entretien matériel', 'wrench', 'Vidange, révision…'], ['panne', 'Panne / réparation', 'alert', 'Avec immobilisation'], ['charge', 'Charge', 'cart', 'Fermage, assurance, prestation…'], ['doc', 'Document', 'file', 'Justificatif, contrat…']] },
+};
+ACT.actionSheet = () => openModal({ title: 'Saisir', body: `<div class="sheet3"><button type="button" class="s3 big" style="--c:var(--c-cult)" data-a="qa" data-k="iv"><span class="ti">${ic('sprout')}</span><span><b>Intervention</b><small>Semis, traitement, engrais, travail du sol, récolte…</small></span>${ic('chevR')}</button>${Object.entries(SHEET).map(([k, g]) => `<button type="button" class="s3" style="--c:${g.c}" data-a="sheetSub" data-k="${k}"><span class="ti">${ic(g.i)}</span><span><b>${g.l}</b><small>${g.items.map(x => x[1]).join(' · ')}</small></span>${ic('chevR')}</button>`).join('')}</div>`, foot: '' });
+ACT.sheetSub = d => { const g = SHEET[d.k]; document.querySelector('#modal .modal-h h2').innerHTML = `<button type="button" class="lnk-back" data-a="actionSheet" style="padding:0">${ic('chevL')}</button> ${g.l}`; document.getElementById('mf').innerHTML = `<div class="sheet3">${g.items.map(([k, l, i, sub]) => `<button type="button" class="s3" style="--c:${g.c}" data-a="qa" data-k="${k}"><span class="ti">${ic(i)}</span><span><b>${l}</b><small>${sub}</small></span>${ic('chevR')}</button>`).join('')}</div>`; };
 ACT.qa = d => {
   closeModal();
   const k = d.k;
@@ -110,6 +115,8 @@ ACT.qa = d => {
     else if (k === 'recolte') { quickIvForm({}); QF.type = 'recolte'; QF.label = 'Récolte'; QF.materiels = [S.materiel.find(m => m.cat === 'moissonneuse'), S.materiel.find(m => m.cat === 'tracteur'), S.materiel.find(m => m.cat === 'remorque')].filter(Boolean).map(m => m.id); QF.hHa = 0.4; renderQF(); }
     else if (k === 'vente') ACT.newSale({});
     else if (k === 'achat') ACT.purchase({});
+    else if (k === 'sortie') ACT.stockOutPick({});
+    else if (k === 'corriger') ACT.stockFixPick();
     else if (k === 'entretien' || k === 'panne') pickMat(k === 'panne' ? 'reparation' : 'entretien');
     else if (k === 'charge') ACT.newCharge();
     else if (k === 'doc') ACT.newDoc();
@@ -197,6 +204,56 @@ ACT.goCours = () => { UI.tabs.eco = 'cours'; go('economie'); };
 
 /* =========================== MAIN-D'ŒUVRE : planning et affectation =========================== */
 const ROLES = ['Exploitant', 'Associé', 'Salarié', 'Saisonnier', 'Apprenti', 'Prestataire'];
+/* ---- Horaires : semaine type par personne + exceptions datées ---- */
+const JOURS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+const MOTIFS = ['Congé', 'Maladie', 'Formation', 'Récupération', 'Autre'];
+const hm = t => { const [a, b] = String(t || '0:0').split(':').map(Number); return a + (b || 0) / 60; };
+const fmtH = h => { const H = Math.floor(h + 1e-9), M = Math.round((h - H) * 60); return M ? `${H}h${String(M).padStart(2, '0')}` : `${H}h`; };
+const fmtT = t => t ? t.replace(':00', 'h').replace(':', 'h') : '';
+function defaultWeek() { return [0, 1, 2, 3, 4, 5, 6].map(i => ({ on: i < 5, deb: '08:00', fin: '17:30', pause: 90 })); }
+function weekOf(m) { if (!m.horaires) m.horaires = defaultWeek(); return m.horaires; }
+/** Disponibilité d'une personne un jour donné (semaine type, sauf exception). */
+function personDay(m, date) {
+  const ex = (m.exceptions || {})[date]; const wd = (D(date).getDay() + 6) % 7; const w = weekOf(m)[wd];
+  if (ex && ex.type === 'absent') return { absent: true, motif: ex.motif || 'Absent', h: 0, ex: true };
+  const r = ex && ex.type === 'horaires' ? ex : w.on ? w : null;
+  if (!r) return { off: true, h: 0, ex: !!ex };
+  const h = Math.max(0, hm(r.fin) - hm(r.deb) - (+r.pause || 0) / 60);
+  return { deb: r.deb, fin: r.fin, pause: +r.pause || 0, h, ex: !!ex };
+}
+const plannedH = (n, date) => r2(sum(S.interventions.filter(i => i.date === date && ivPeople(i).includes(n)), i => i.heures / Math.max(1, ivPeople(i).length)), 1);
+const TIMES = (() => { const a = []; for (let h = 4; h <= 22; h++) for (const mm of ['00', '30']) a.push(`${String(h).padStart(2, '0')}:${mm}`); return a; })();
+const weekSummary = m => { const w = weekOf(m); const on = w.map((d, i) => d.on ? i : -1).filter(i => i >= 0); if (!on.length) return 'Aucun jour travaillé'; const same = on.every(i => w[i].deb === w[on[0]].deb && w[i].fin === w[on[0]].fin); const days = on.length === 5 && on[4] === 4 ? 'Lun–Ven' : on.map(i => JOURS[i].slice(0, 3)).join(', '); const tot = sum(on, i => Math.max(0, hm(w[i].fin) - hm(w[i].deb) - w[i].pause / 60)); return `${days}${same ? ` · ${fmtT(w[on[0]].deb)}–${fmtT(w[on[0]].fin)}` : ''} · ${fmtH(tot)}/sem.`; };
+let HW = null;
+ACT.eqHours = (d, el, e) => { e && e.stopPropagation(); const m = team()[+d.i]; HW = { i: +d.i, w: JSON.parse(JSON.stringify(weekOf(m))) }; openModal({ title: `Horaires habituels · ${esc(m.nom)}`, body: '<div id="hwBox"></div>', submit: 'Enregistrer', onMount: renderHW, onSubmit: () => { team()[HW.i].horaires = HW.w; commit('Horaires enregistrés'); } }); };
+function renderHW() {
+  const box = document.getElementById('hwBox'); if (!box) return;
+  const tot = sum(HW.w.filter(d => d.on), d => Math.max(0, hm(d.fin) - hm(d.deb) - d.pause / 60));
+  box.innerHTML = `<p class="small muted" style="margin-top:0">Semaine type. Les changements ponctuels (congé, horaires d’un jour) se font dans le planning, en touchant la personne sur le jour voulu.</p>
+  ${HW.w.map((d, k) => `<div class="hw-row ${d.on ? '' : 'off'}"><button type="button" class="switch ${d.on ? 'on' : ''}" data-a="hwOn" data-k="${k}" aria-label="Travaillé"></button><b>${JOURS[k]}</b>${d.on ? `<select class="inp" data-ch="hw" data-k="${k}" data-f="deb">${opts(TIMES.map(t => [t, fmtT(t)]), d.deb)}</select><span>à</span><select class="inp" data-ch="hw" data-k="${k}" data-f="fin">${opts(TIMES.map(t => [t, fmtT(t)]), d.fin)}</select>` : '<span class="muted small">repos</span>'}</div>${d.on ? `<div class="hw-pause"><span>Pause</span>${[0, 30, 60, 90, 120].map(p => `<button type="button" class="${d.pause === p ? 'on' : ''}" data-a="hwP" data-k="${k}" data-v="${p}">${p ? fmtH(p / 60) : 'aucune'}</button>`).join('')}<em>${fmtH(Math.max(0, hm(d.fin) - hm(d.deb) - d.pause / 60))}</em></div>` : ''}`).join('')}
+  <div class="row mt" style="gap:8px"><button type="button" class="btn sm" data-a="hwCopy">Appliquer lundi à tous les jours travaillés</button><span class="sp"></span><b>${fmtH(tot)} / semaine</b></div>`;
+}
+ACT.hwOn = d => { HW.w[+d.k].on = !HW.w[+d.k].on; renderHW(); };
+ACT.hwP = d => { HW.w[+d.k].pause = +d.v; renderHW(); };
+CH.hw = el => { HW.w[+el.dataset.k][el.dataset.f] = el.value; renderHW(); };
+ACT.hwCopy = () => { const m = HW.w[0]; HW.w.forEach(d => { if (d.on) { d.deb = m.deb; d.fin = m.fin; d.pause = m.pause; } }); renderHW(); };
+let DX = null;
+ACT.dayEdit = d => {
+  const m = team().find(x => x.nom === d.n); if (!m) return; const date = d.d; const cur = (m.exceptions || {})[date]; const base = weekOf(m)[(D(date).getDay() + 6) % 7];
+  DX = { m, date, type: cur ? cur.type : 'normal', motif: cur?.motif || 'Congé', deb: cur?.deb || (base.on ? base.deb : '08:00'), fin: cur?.fin || (base.on ? base.fin : '17:30'), pause: cur?.pause ?? (base.on ? base.pause : 60), base };
+  openModal({ title: `${avatar(m.nom)} ${esc(m.nom.split(' ')[0])} · ${D(date).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}`, body: '<div id="dxBox"></div>', submit: 'Enregistrer', onMount: renderDX, onSubmit: () => { const ex = DX.m.exceptions || (DX.m.exceptions = {}); if (DX.type === 'normal') delete ex[DX.date]; else if (DX.type === 'absent') ex[DX.date] = { type: 'absent', motif: DX.motif }; else ex[DX.date] = { type: 'horaires', deb: DX.deb, fin: DX.fin, pause: DX.pause }; const pl = plannedH(DX.m.nom, DX.date); commit(DX.type === 'absent' && pl ? `Absence enregistrée — ${fmtH(pl)} de travaux sont prévus ce jour pour ${DX.m.nom} : pensez à les réaffecter` : 'Journée mise à jour', DX.type === 'absent' && pl ? 'warn' : ''); } });
+};
+function renderDX() {
+  const b = document.getElementById('dxBox'); if (!b) return; const pl = plannedH(DX.m.nom, DX.date);
+  b.innerHTML = `<div class="qf-status" style="grid-template-columns:repeat(3,1fr)">${[['normal', 'clock', 'Habituel', DX.base.on ? `${fmtT(DX.base.deb)}–${fmtT(DX.base.fin)}` : 'repos'], ['horaires', 'edit', 'Autres horaires', 'ce jour-là'], ['absent', 'x', 'Absent', 'congé, maladie…']].map(([v, i, l, sub]) => `<button type="button" class="${DX.type === v ? 'on' : ''}" data-a="dxT" data-v="${v}">${ic(i)}<b>${l}</b><small>${sub}</small></button>`).join('')}</div>
+  ${DX.type === 'horaires' ? `<div class="hw-row mt"><b>De</b><select class="inp" data-ch="dx" data-f="deb">${opts(TIMES.map(t => [t, fmtT(t)]), DX.deb)}</select><span>à</span><select class="inp" data-ch="dx" data-f="fin">${opts(TIMES.map(t => [t, fmtT(t)]), DX.fin)}</select></div><div class="hw-pause"><span>Pause</span>${[0, 30, 60, 90, 120].map(p => `<button type="button" class="${+DX.pause === p ? 'on' : ''}" data-a="dxP" data-v="${p}">${p ? fmtH(p / 60) : 'aucune'}</button>`).join('')}<em>${fmtH(Math.max(0, hm(DX.fin) - hm(DX.deb) - DX.pause / 60))}</em></div>` : ''}
+  ${DX.type === 'absent' ? `<div class="field mt"><span>Motif</span><div class="ob-chips">${MOTIFS.map(x => `<button type="button" class="fchip ${DX.motif === x ? 'on' : ''}" style="--c:var(--late)" data-a="dxM" data-v="${x}">${x}</button>`).join('')}</div></div>` : ''}
+  ${pl ? `<div class="note ${DX.type === 'absent' ? 'warn' : ''} mt">${ic('info')}<span>${fmtH(pl)} de travaux prévus ce jour pour ${esc(DX.m.nom.split(' ')[0])}.</span></div>` : ''}`;
+}
+ACT.dxT = d => { DX.type = d.v; renderDX(); };
+ACT.dxM = d => { DX.motif = d.v; renderDX(); };
+ACT.dxP = d => { DX.pause = +d.v; renderDX(); };
+CH.dx = el => { DX[el.dataset.f] = el.value; renderDX(); };
 function weekStart(off = 0) { const d = D(TODAY); const wd = (d.getDay() + 6) % 7; d.setDate(d.getDate() - wd + off * 7); return iso(d); }
 VIEWS.equipe = () => {
   const t = tab('eq', 'planning');
@@ -217,13 +274,14 @@ function eqPlanning() {
   const lbl = `${D(ws).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} – ${D(we).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}`;
   let h = `<div class="wk-nav"><button class="btn icon" data-a="wk" data-d="-1">${ic('chevL')}</button><div><b>${off === 0 ? 'Cette semaine' : off === 1 ? 'Semaine prochaine' : off === -1 ? 'Semaine dernière' : 'Semaine'}</b><span>${lbl}</span></div><button class="btn icon" data-a="wk" data-d="1">${ic('chevR')}</button></div>
   ${off ? `<div style="text-align:center;margin-top:6px"><button class="lnk" data-a="wk" data-d="0">Revenir à aujourd’hui</button></div>` : ''}
-  <div class="eq-load">${team().map(m => { const hh = hours(m.nom); return `<button class="eq-p ${who === m.nom ? 'on' : ''}" style="--c:${pColor(m.nom)}" data-a="eqWho" data-v="${esc(m.nom)}">${avatar(m.nom)}<span><b>${esc(m.nom.split(' ')[0])}</b><small>${nf(hh, 1)} h</small></span></button>`; }).join('')}<button class="eq-p ${who === '_none' ? 'on' : ''}" style="--c:var(--late)" data-a="eqWho" data-v="_none"><span class="av" style="--c:var(--late)">?</span><span><b>À affecter</b><small>${toAssign.length}</small></span></button></div>`;
+  <div class="eq-load">${team().map(m => { const hh = hours(m.nom); const dispo = sum([0, 1, 2, 3, 4, 5, 6], k => personDay(m, addDays(ws, k)).h); return `<button class="eq-p ${who === m.nom ? 'on' : ''} ${hh > dispo + 0.01 ? 'over' : ''}" style="--c:${pColor(m.nom)}" data-a="eqWho" data-v="${esc(m.nom)}">${avatar(m.nom)}<span><b>${esc(m.nom.split(' ')[0])}</b><small>${fmtH(hh)} / ${fmtH(dispo)}</small></span></button>`; }).join('')}<button class="eq-p ${who === '_none' ? 'on' : ''}" style="--c:var(--late)" data-a="eqWho" data-v="_none"><span class="av" style="--c:var(--late)">?</span><span><b>À affecter</b><small>${toAssign.length}</small></span></button></div>`;
   if (toAssign.length && !who) h += `<div class="eq-assign"><div class="row"><b>${ic('alert')} ${toAssign.length} travail(x) sans personne</b><span class="sp"></span><button class="btn sm p" data-a="planAssign" data-id="${toAssign.map(i => i.id).join(',')}">Tout affecter</button></div><small>Prévus d’ici le ${dshort(we)} · touchez un travail pour l’affecter à quelqu’un</small></div>`;
   if (late.length) h += `<div class="eq-day late"><div class="eq-dh"><b>${ic('alert')} En retard</b><span>${late.length}</span></div>${eqGroups(late.sort((a, b) => a.date.localeCompare(b.date))).map(eqRow).join('')}</div>`;
   for (let k = 0; k < 7; k++) {
     const d = addDays(ws, k), items = week.filter(i => i.date === d);
     const isToday = d === TODAY;
-    h += `<div class="eq-day ${isToday ? 'today' : ''}"><div class="eq-dh"><b>${D(d).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' })}${isToday ? ' · aujourd’hui' : ''}</b><span>${items.length ? `${nfx(sum(items, i => i.heures), 1)} h` : ''}</span></div>${items.length ? eqGroups(items).map(eqRow).join('') : `<div class="eq-empty">—</div>`}</div>`;
+    const avail = team().filter(m => !who || who === '_none' || m.nom === who).map(m => { const pd = personDay(m, d), pl = plannedH(m.nom, d); const over = pl > pd.h + 0.01; return `<button class="dv ${pd.absent ? 'abs' : pd.off ? 'off' : over ? 'over' : ''} ${pd.ex ? 'ex' : ''}" style="--c:${pColor(m.nom)}" data-a="dayEdit" data-n="${esc(m.nom)}" data-d="${d}">${avatar(m.nom, true)}<span>${pd.absent ? esc(pd.motif) : pd.off ? 'Repos' : `${fmtT(pd.deb)}–${fmtT(pd.fin)}`}${!pd.absent && !pd.off || pl ? `<small>${fmtH(pl)} / ${fmtH(pd.h)}</small>` : ''}</span></button>`; }).join('');
+    h += `<div class="eq-day ${isToday ? 'today' : ''}"><div class="eq-dh"><b>${D(d).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' })}${isToday ? ' · aujourd’hui' : ''}</b><span>${items.length ? `${nfx(sum(items, i => i.heures), 1)} h de travaux` : ''}</span></div>${avail ? `<div class="dv-row">${avail}</div>` : ''}${items.length ? eqGroups(items).map(eqRow).join('') : `<div class="eq-empty">Aucun travail prévu</div>`}</div>`;
   }
   return h;
 }
@@ -242,13 +300,15 @@ ACT.planAssign = d => {
     title: `${esc(ivs[0].label)}${ivs.length > 1 ? ` · ${ivs.length} travaux` : ''}`, body: `<p class="small muted" style="margin-top:0">${ivs.length > 1 ? `${ivs.length} travaux · ${nf(sum(ivs, i => i.surface), 1)} ha` : `${esc(parcName(ivs[0].parcelleId))} · ${nf(ivs[0].surface, 1)} ha`} · prévu ${same ? 'le ' + dfr(ivs[0].date) : 'à des dates différentes'}</p><div id="paBox"></div>`,
     foot: `${ivs.length === 1 ? `<button type="button" class="btn" data-a="paOpen" data-id="${ivs[0].id}">Détail</button>` : ''}<button class="btn p" type="submit" form="mf">${ic('check')} Enregistrer</button>`,
     onMount: render2,
-    onSubmit: () => { if (!PA.sel.length) throw new Error('Choisissez au moins une personne'); PA.ivs.forEach(i => { i.personnes = [...PA.sel]; i.mo = PA.sel.join(', '); if (PA.date && PA.date !== i.date) { i.date = PA.date; i.custom = true; } }); rememberPeople(PA.sel); S.interventions.sort((a, b) => a.date.localeCompare(b.date)); commit(`Affecté à ${PA.sel.join(', ')}${PA.date ? ' · ' + dfr(PA.date) : ''}`); }
+    onSubmit: () => { if (!PA.sel.length) throw new Error('Choisissez au moins une personne'); const absent = PA.sel.filter(n => { const m = team().find(x => x.nom === n); return m && PA.ivs.some(i => { const pd = personDay(m, PA.date || i.date); return pd.absent || pd.off; }); }); if (absent.length) setTimeout(() => toast(`Attention : ${absent.join(', ')} ne travaille pas ce jour-là (absence ou repos)`, 'warn'), 300);
+      PA.ivs.forEach(i => { i.personnes = [...PA.sel]; i.mo = PA.sel.join(', '); if (PA.date && PA.date !== i.date) { i.date = PA.date; i.custom = true; } }); rememberPeople(PA.sel); S.interventions.sort((a, b) => a.date.localeCompare(b.date)); commit(`Affecté à ${PA.sel.join(', ')}${PA.date ? ' · ' + dfr(PA.date) : ''}`); }
   });
 };
 ACT.paOpen = d => { closeModal(); openDrawer('intervention', d.id); };
 function eqTeam() {
   const ws = weekStart(0), we = addDays(ws, 6);
   return `${team().map((m, i) => { const mine = S.interventions.filter(iv => ivPeople(iv).includes(m.nom) && iv.campagne === CURRENT_CAMP); const done = mine.filter(iv => iv.statut === 'realisee'); const wk = S.interventions.filter(iv => ivPeople(iv).includes(m.nom) && iv.date >= ws && iv.date <= we); return `<div class="eq-card" style="--c:${pColor(m.nom)}"><div class="row" data-a="personDetail" data-n="${esc(m.nom)}">${avatar(m.nom)}<div style="flex:1;min-width:0"><b>${esc(m.nom)}</b><small>${esc(m.role || '')}${m.taux ? ` · ${eur(m.taux, 2)}/h` : ''}</small></div><button class="btn sm icon g" data-a="eqEdit" data-i="${i}" aria-label="Modifier">${ic('edit')}</button></div>
+    <button class="hw-sum" data-a="eqHours" data-i="${i}">${ic('clock')}<span>${weekSummary(m)}</span><b>Horaires ${ic('chevR')}</b></button>
     <div class="eq-stats"><div><b>${wk.length}</b><span>cette semaine</span></div><div><b>${nf(sum(wk, x => x.heures / Math.max(1, ivPeople(x).length)), 1)} h</b><span>prévues</span></div><div><b>${done.length}</b><span>réalisées (campagne)</span></div><div><b>${nf(sum(done, x => x.heures / Math.max(1, ivPeople(x).length)), 0)} h</b><span>travaillées</span></div></div></div>`; }).join('') || '<div class="card empty">Aucune personne. Ajoutez votre équipe.</div>'}
   <button class="btn mt" style="width:100%;height:48px;border-style:dashed" data-a="eqAddPerson">${ic('plus')} Ajouter une personne</button>
   <div class="formula">Heures : temps de chaque opération réparti entre les personnes affectées. Coût horaire facultatif, utilisé plus tard pour le coût de main-d’œuvre.</div>`;
@@ -356,6 +416,20 @@ function parcState(p) {
   const planSemis = ivs.some(i => i.type === 'semis' && i.statut === 'planifiee');
   if (planSemis || c.semis > TODAY) return { k: 'asemer', l: 'À semer', cls: 'warn' };
   return { k: 'culture', l: 'En culture', cls: 'ok' };
+}
+/** Contrôle de cohérence : renvoie la raison si l'opération est illogique sur cette parcelle, sinon ''. */
+function ivBlock(p, type, opts = {}) {
+  const c = curCult(p); const ivs = S.interventions.filter(i => i.parcelleId === p.id && i.campagne === CURRENT_CAMP && i.id !== opts.except);
+  const real = ivs.filter(i => i.statut === 'realisee');
+  const rec = real.find(i => i.type === 'recolte'); const harvested = !!rec || !!c?.rdtReel;
+  const sem = real.filter(i => i.type === 'semis').sort((a, b) => b.date.localeCompare(a.date))[0];
+  const sown = !!sem || (!!c && c.semis <= TODAY && !ivs.some(i => i.type === 'semis' && i.statut === 'planifiee'));
+  const h = rec ? ` le ${dshort(rec.date)}` : '';
+  if (type === 'recolte') { if (!c) return 'non assolée'; if (harvested) return `déjà récoltée${h}`; if (!sown) return 'pas encore semée'; if (c.culture === 'jachere') return 'jachère'; }
+  if (type === 'semis') { if (harvested) return `déjà récoltée${h} cette campagne`; if (sem && !opts.ressemis) return `déjà semée le ${dshort(sem.date)}`; }
+  if (type === 'protection' || type === 'irrigation') { if (!c) return 'non assolée'; if (harvested) return `déjà récoltée${h}`; if (!sown) return 'pas encore semée'; }
+  if (opts.date && type === 'recolte' && sem && opts.date < sem.date) return 'date avant le semis';
+  return '';
 }
 const statutParc = p => { const s = parcState(p); return `<span class="badge ${s.cls}">${s.l}${s.d ? ` · ${dshort(s.d)}` : ''}</span>`; };
 function lastOp(p) { return S.interventions.filter(i => i.parcelleId === p.id && i.statut === 'realisee').sort((a, b) => b.date.localeCompare(a.date))[0]; }
@@ -719,6 +793,7 @@ let VPPL = [];
 ACT.vWho = d => { const i = VPPL.indexOf(d.n); if (d.add) { if (i < 0) VPPL.push(d.n); } else i >= 0 ? VPPL.splice(i, 1) : VPPL.push(d.n); document.getElementById('vPpl').innerHTML = peoplePicker(VPPL, 'vWho'); };
 ACT.validateIv = d => {
   const i = byId('interventions', d.id);
+  { const why = ivBlock(byId('parcelles', i.parcelleId), i.type, { except: i.id }); if (why) { toast(`Impossible : ${parcName(i.parcelleId)} ${why}. Supprimez ce travail prévu ou modifiez-le.`, 'warn'); return; } }
   const p = byId('parcelles', i.parcelleId); const rec = p.cultures[i.campagne];
   const need = i.produits.map(x => { const it = byId('stock', x.itemId); const q = r2(x.dose * i.surface, 3); return it && it.qte < q ? `${esc(it.nom)} : ${nfx(it.qte, 1)} ${it.unite} en stock pour ${nfx(q, 1)} nécessaires` : null; }).filter(Boolean);
   openModal({
@@ -801,9 +876,11 @@ function renderQF() {
   h += `<div class="qf-sec">${qfSecHead(1, 'Opération', QF.open.type === false || QF.typeChosen ? INTER_TYPES[QF.type] : '', 'type', QF.open.type !== false && !QF.typeChosen)}
     ${QF.open.type !== false && !QF.typeChosen ? `<div class="type-grid">${Object.entries(INTER_TYPES).map(([k, l]) => `<div class="pick ${QF.type === k ? 'on' : ''}" data-a="qfT" data-k="${k}">${ic(IV_ICON[k])}${l.replace(' / plantation', '').replace(' des cultures', '')}</div>`).join('')}</div>` : ''}</div>`;
   // 3. Parcelles
+  if (!QF.edit && !QF.blkChecked) { QF.blkChecked = true; const bad = QF.parcelles.filter(id => ivBlock(byId('parcelles', id), QF.type)); if (bad.length) { QF.parcelles = QF.parcelles.filter(id => !bad.includes(id)); setTimeout(() => toast(bad.map(id => `${parcName(id)} : ${ivBlock(byId('parcelles', id), QF.type)}`).join(' · '), 'warn'), 50); } }
   const ass = assolement(CURRENT_CAMP); const noCult = S.parcelles.filter(p => !curCult(p));
   const parcSum = QF.parcelles.length ? `${QF.parcelles.length} parcelle${QF.parcelles.length > 1 ? 's' : ''} · ${nf(surf, 1)} ha` : '<span style="color:var(--late)">à choisir</span>';
   h += `<div class="qf-sec">${qfSecHead(2, 'Parcelles', parcSum, 'parc', openParc)}`;
+  if (QF.type === 'semis' && !QF.edit && S.parcelles.some(p => ivBlock(p, 'semis').startsWith('déjà semée'))) h += `<label class="row small" style="margin:-4px 0 8px"><input type="checkbox" data-ch="qfRes" ${QF.ressemis ? 'checked' : ''}> Ressemis (autoriser les parcelles déjà semées)</label>`;
   if (openParc) {
     if (!many) h += `<div class="pick-grid">${S.parcelles.map(p => qfParcPick(p)).join('')}</div>`;
     else h += `${!QF.edit ? `<div class="qf-all"><button type="button" class="lnk" data-a="qfCult" data-c="*">${QF.parcelles.length === S.parcelles.length ? 'Tout désélectionner' : 'Tout sélectionner'}</button></div>` : ''}${[...ass.map(a => ({ key: a.key, label: a.label, color: a.color, ps: S.parcelles.filter(p => curCult(p)?.culture === a.key) })), ...(noCult.length ? [{ key: '_none', label: 'Non assolées', color: '#999', ps: noCult }] : [])].map(g => { const sel = g.ps.filter(p => QF.parcelles.includes(p.id)); const op = QF.open['c_' + g.key]; return `<div class="qf-cult" style="--c:${g.color}"><div class="qf-ch"><button type="button" class="qf-cl" data-a="qfOpenC" data-c="${g.key}"><span class="sw"></span><b>${esc(g.label)}</b><small>${g.ps.length} parc. · ${nf(sum(g.ps, p => p.surface), 1)} ha${sel.length ? ` · <span style="color:var(--primary);font-weight:800">${sel.length} choisie${sel.length > 1 ? 's' : ''}</span>` : ''}</small>${ic(op ? 'up' : 'down')}</button><button type="button" class="qf-tout ${sel.length === g.ps.length ? 'on' : ''}" data-a="qfCult" data-c="${g.key}">${sel.length === g.ps.length ? ic('check') + ' Tout' : 'Tout'}</button></div>${op ? `<div class="pick-grid" style="margin-top:8px">${g.ps.map(p => qfParcPick(p, true)).join('')}</div>` : ''}</div>`; }).join('')}`;
@@ -817,7 +894,7 @@ function renderQF() {
     const pc = QF.prodCat && cats.includes(QF.prodCat) ? QF.prodCat : cats[0];
     h += `<div class="qf-sec">${qfSecHead(3, needProd ? 'Produit' + (QF.type === 'semis' ? ' (semence)' : '') : 'Produits (facultatif)', QF.produits.filter(x => x.itemId).length ? `${QF.produits.filter(x => x.itemId).length} choisi(s)` : needProd ? '<span style="color:var(--late)">obligatoire</span>' : '', 'prod', true)}
     ${QF.produits.map((x, k) => { const it = byId('stock', x.itemId); if (!it) return ''; const m = STOCK_META[it.cat]; const tot = (+x.dose || 0) * surf; return `<div class="qf-prod" style="--c:${m.color}"><div class="row" style="gap:10px"><span class="st-ic">${ic(m.icon)}</span><div style="flex:1;min-width:0"><b>${esc(it.nom)}</b><small>${it.variete ? 'Variété ' + esc(it.variete) + ' · ' : ''}en stock : ${qty(it.qte, it.unite)}</small></div><button type="button" class="btn sm icon g" data-a="qfDel" data-i="${k}" aria-label="Retirer">${ic('x')}</button></div>
-      <div class="row" style="gap:10px;margin-top:8px"><div class="stepper"><button type="button" data-a="qfDose" data-i="${k}" data-d="-1">${ic('minus')}</button><input inputmode="decimal" data-in="qfDose" data-i="${k}" value="${String(x.dose ?? '').replace('.', ',')}" placeholder="dose"><span>${it.unite}/ha</span><button type="button" data-a="qfDose" data-i="${k}" data-d="1">${ic('plus')}</button></div><div class="qf-tot">Total<b data-tot="${k}">${qty(r2(tot, 2), it.unite)}</b></div></div></div>`; }).join('')}
+      <div class="row" style="gap:10px;margin-top:8px"><div class="stepper"><button type="button" data-a="qfDose" data-i="${k}" data-d="-1">${ic('minus')}</button><input inputmode="decimal" data-in="qfDose" data-i="${k}" value="${String(x.dose ?? '').replace('.', ',')}" placeholder="dose"><span>${it.unite}/ha</span><button type="button" data-a="qfDose" data-i="${k}" data-d="1">${ic('plus')}</button></div><div class="qf-tot">Total<b data-tot="${k}">${qty(r2(tot, 2), it.unite)}</b></div></div>${QF.type === 'semis' && it.cat === 'semences' ? semisCalc(it, k) : ''}</div>`; }).join('')}
     ${QF.pickOpen || !QF.produits.filter(x => x.itemId).length ? `<div class="qf-picker">${cats.length > 1 ? `<div class="fchips" style="margin-bottom:8px">${cats.map(c => `<button type="button" class="fchip ${pc === c ? 'on' : ''}" style="--c:${STOCK_META[c].color}" data-a="qfPC" data-c="${c}">${ic(STOCK_META[c].icon)} ${STOCK_META[c].label}</button>`).join('')}</div>` : ''}
       ${QF.newProd ? `<div class="qf-new"><input class="inp" id="qfNewNom" placeholder="Nom du nouveau produit ${STOCK_META[pc].label.toLowerCase()}"><div class="ob-chips" id="qfNewU" style="margin-top:8px">${[['kg', 'kg'], ['t', 't'], ['L', 'L'], ['dose', 'dose'], ['u', 'unité']].map(([v, l]) => `<button type="button" class="fchip ${v === (QF.newUnit || ({ phyto: 'L', amendements: 't' }[pc] || 'kg')) ? 'on' : ''}" style="--c:var(--primary)" data-a="qfNewU" data-v="${v}">${l}</button>`).join('')}</div><div class="row mt" style="gap:8px"><button type="button" class="btn" data-a="qfNewCancel">Annuler</button><button type="button" class="btn p" style="flex:1" data-a="qfNewAdd" data-c="${pc}">${ic('plus')} Ajouter</button></div></div>`
         : `<div class="swz-list">${S.stock.filter(i => i.cat === pc && !QF.produits.some(x => x.itemId === i.id)).sort((a, b) => (b.qte > 0) - (a.qte > 0) || a.nom.localeCompare(b.nom)).map(i => `<button type="button" class="swz-item" style="--c:${STOCK_META[pc].color}" data-a="qfAddP" data-id="${i.id}"><span class="st-ic">${ic(STOCK_META[pc].icon)}</span><span class="t"><b>${esc(i.nom)}</b></span><span class="q ${i.qte <= 0 ? 'danger' : ''}">${qty(i.qte, i.unite)}</span></button>`).join('') || '<div class="empty small">Aucun produit dans cette catégorie</div>'}</div><button type="button" class="btn sm mt" style="border-style:dashed;width:100%" data-a="qfNewP">${ic('plus')} Nouveau produit ${STOCK_META[pc].label.toLowerCase()}</button>`}
@@ -836,7 +913,10 @@ function renderQF() {
   }
   // Semis : variété ; Récolte : quantité
   if (QF.type === 'semis') h += `<label class="field"><span>Variété (facultatif)</span><input class="inp" data-in="qf" data-k="variete" value="${esc(QF.variete || (QF.parcelles.length === 1 ? curCult(byId('parcelles', QF.parcelles[0]))?.variete || '' : ''))}" placeholder="Ex. : Chevignon"></label>`;
-  if (QF.type === 'recolte' && QF.statut === 'realisee') h += `<label class="field"><span>Quantité récoltée totale (t) *</span><input class="inp" inputmode="decimal" data-in="qf" data-k="recolte" value="${QF.recolte}" style="font-size:22px;font-weight:800;height:54px"><small>${QF.recolte && surf ? `${nfx(parseFloat(String(QF.recolte).replace(',', '.')) / surf, 2)} t/ha · ` : ''}répartie selon les surfaces et ajoutée au stock</small></label>`;
+  if (QF.type === 'recolte' && QF.statut === 'realisee') { const u = QF.rdtU || 'q'; h += `<div class="qf-sec"><div class="qf-h open" style="cursor:default"><span class="n">${ic('wheat')}</span><span class="t">Récolte</span><span class="s" id="recSum">${QF.recolte ? `${nfx(parseFloat(String(QF.recolte).replace(',', '.')), 2)} t` : '<span style="color:var(--late)">obligatoire</span>'}</span></div>
+    <div class="field"><span>Rendement</span><div class="row" style="gap:8px"><input class="inp" inputmode="decimal" data-in="rdt" value="${QF.rdtVal || ''}" placeholder="Ex. : 85" style="font-size:20px;font-weight:800;height:52px;flex:1"><div class="seg">${[['q', 'q/ha'], ['t', 't/ha'], ['kg', 'kg/ha']].map(([v, l]) => `<button type="button" class="${u === v ? 'on' : ''}" data-a="rdtU" data-v="${v}">${l}</button>`).join('')}</div></div></div>
+    <div class="field" style="margin-top:10px"><span>Ou quantité totale récoltée (t)</span><input class="inp" inputmode="decimal" data-in="recTot" value="${QF.recolte || ''}" placeholder="Calculée automatiquement"></div>
+    <div class="calc-out" id="recOut">${recText()}</div></div>`; }
   // Qui
   h += `<div class="qf-sec"><div class="qf-h open" style="cursor:default"><span class="n">${ic('users')}</span><span class="t">Qui ${QF.statut === 'realisee' ? 'l’a fait' : 'le fera'} ?</span><span class="s">${QF.personnes.length ? QF.personnes.join(', ') : '<span style="color:var(--late)">obligatoire</span>'}</span></div>${peoplePicker(QF.personnes, 'qfWho')}</div>`;
   // 5. Date et détails
@@ -853,12 +933,30 @@ function renderQF() {
   h += `<div class="qf-sum ${warn.length ? 'warn' : ''}">${surf ? `<b>${QF.parcelles.length} parc. · ${nf(surf, 1)} ha</b>${cost ? ` · intrants ≈ ${eur(cost)}` : ''}${warn.length ? `<br>${ic('alert')} Stock insuffisant : ${warn.join(' · ')}` : ''}` : 'Choisissez au moins une parcelle'}</div>`;
   f.innerHTML = h;
 }
-function qfParcPick(p, noCult) { const c = curCult(p); const on = QF.parcelles.includes(p.id); return `<div class="pick ${on ? 'on' : ''}" style="--c:${CULTURES[c?.culture]?.color || '#999'}" data-a="qfP" data-id="${p.id}"><i class="sw"></i><span>${esc(p.nom)}<small>${nf(p.surface, 1)} ha${noCult ? '' : ' · ' + esc(CULTURES[c?.culture]?.nom || '—')}</small></span><span class="ck">${on ? ic('check') : ''}</span></div>`; }
+/* ---- Aide au calcul du semis : dose = densité × PMG / 100 (kg/ha), pertes à la levée en option ---- */
+function semisCalc(it, k) {
+  const cs = (QF.calc = QF.calc || {})[k] || (QF.calc[k] = { open: false, pmg: it.pmg || '', dens: '', pertes: '', gpd: it.grainsDose || 50000 });
+  if (!cs.open) return `<button type="button" class="calc-open" data-a="calcOpen" data-i="${k}">${ic('chart')} Calculer la dose (PMG × densité)</button>`;
+  const perDose = it.unite === 'dose' || it.unite === 'u';
+  return `<div class="calc"><div class="grid2"><label class="field"><span>PMG (g)</span><input class="inp" inputmode="decimal" data-in="calc" data-i="${k}" data-f="pmg" value="${cs.pmg}" placeholder="Ex. : 45" ${perDose ? 'disabled' : ''}></label><label class="field"><span>Densité (grains/m²)</span><input class="inp" inputmode="decimal" data-in="calc" data-i="${k}" data-f="dens" value="${cs.dens}" placeholder="${perDose ? 'Ex. : 9' : 'Ex. : 250'}"></label></div>
+  <div class="grid2" style="margin-top:8px"><label class="field"><span>Pertes à la levée (%)</span><input class="inp" inputmode="decimal" data-in="calc" data-i="${k}" data-f="pertes" value="${cs.pertes}" placeholder="0"></label>${perDose ? `<label class="field"><span>Grains par ${it.unite === 'dose' ? 'dose' : 'unité'}</span><input class="inp" inputmode="numeric" data-in="calc" data-i="${k}" data-f="gpd" value="${cs.gpd}"></label>` : '<div></div>'}</div>
+  <div class="calc-out" id="calcOut${k}">${calcText(it, cs)}</div></div>`;
+}
+function calcDose(it, cs) { const n = v => parseFloat(String(v || '').replace(',', '.')) || 0; const dens = n(cs.dens), p = Math.min(90, n(cs.pertes)); if (!dens) return null; const eff = dens / (1 - p / 100); if (it.unite === 'dose' || it.unite === 'u') return r2(eff * 10000 / (n(cs.gpd) || 50000), 2); const pmg = n(cs.pmg); if (!pmg) return null; const kg = eff * pmg / 100; return it.unite === 't' ? r2(kg / 1000, 4) : r2(kg, 1); }
+function calcText(it, cs) { const d = calcDose(it, cs); return d == null ? 'Renseignez la densité' + (it.unite === 'kg' || it.unite === 't' ? ' et le PMG' : '') : `Dose : <b>${nfx(d, 2)} ${it.unite}/ha</b>${(+String(cs.pertes).replace(',', '.') || 0) ? ' (pertes incluses)' : ''} · total ${qty(r2(d * qfSurface(), 2), it.unite)}`; }
+const RDT_F = { q: 0.1, t: 1, kg: 0.001 };
+function recText() { const s = qfSurface(); const tot = parseFloat(String(QF.recolte || '').replace(',', '.')); return s ? (tot > 0 ? `<b>${nfx(tot, 2)} t</b> sur ${nf(s, 2)} ha · ${nfx(tot / s * 10, 1)} q/ha · ${nfx(tot / s, 2)} t/ha` : `Surface : ${nf(s, 2)} ha`) : 'Choisissez les parcelles'; }
+IN.rdt = el => { QF.rdtVal = el.value; const v = parseFloat(el.value.replace(',', '.')); const s = qfSurface(); QF.recolte = v > 0 && s ? String(r2(v * RDT_F[QF.rdtU || 'q'] * s, 2)) : ''; const t = document.querySelector('[data-in=recTot]'); if (t) t.value = QF.recolte.replace('.', ','); document.getElementById('recOut').innerHTML = recText(); const rs = document.getElementById('recSum'); if (rs) rs.textContent = QF.recolte ? `${nfx(+QF.recolte, 2)} t` : ''; };
+IN.recTot = el => { QF.recolte = el.value.replace(',', '.'); const v = parseFloat(QF.recolte); const s = qfSurface(); QF.rdtVal = v > 0 && s ? String(r2(v / s / RDT_F[QF.rdtU || 'q'], 2)).replace('.', ',') : ''; const r = document.querySelector('[data-in=rdt]'); if (r) r.value = QF.rdtVal; document.getElementById('recOut').innerHTML = recText(); };
+ACT.rdtU = d => { QF.rdtU = d.v; const v = parseFloat(String(QF.recolte || '').replace(',', '.')); const s = qfSurface(); if (v > 0 && s) QF.rdtVal = String(r2(v / s / RDT_F[d.v], 2)).replace('.', ','); renderQF(); };
+ACT.calcOpen = d => { QF.calc[d.i].open = true; renderQF(); };
+IN.calc = el => { const k = +el.dataset.i, cs = QF.calc[k]; cs[el.dataset.f] = el.value; const x = QF.produits[k]; const it = byId('stock', x.itemId); const dd = calcDose(it, cs); if (dd != null) { x.dose = dd; QF.manual = true; const inp = document.querySelector(`[data-in="qfDose"][data-i="${k}"]`); if (inp) inp.value = String(dd).replace('.', ','); const t = document.querySelector(`[data-tot="${k}"]`); if (t) t.textContent = qty(r2(dd * qfSurface(), 2), it.unite); } const o = document.getElementById('calcOut' + k); if (o) o.innerHTML = calcText(it, cs); };
+function qfParcPick(p, noCult) { const c = curCult(p); const on = QF.parcelles.includes(p.id); const why = QF.edit ? '' : ivBlock(p, QF.type, { ressemis: QF.ressemis }); return `<div class="pick ${on ? 'on' : ''} ${why ? 'dis' : ''}" style="--c:${CULTURES[c?.culture]?.color || '#999'}" data-a="qfP" data-id="${p.id}"><i class="sw"></i><span>${esc(p.nom)}<small>${why ? `<b class="why">${esc(why)}</b>` : `${nf(p.surface, 1)} ha${noCult ? '' : ' · ' + esc(CULTURES[c?.culture]?.nom || '—')}`}</small></span><span class="ck">${on ? ic('check') : ''}</span></div>`; }
 ACT.qfToggle = d => { QF.open = QF.open || {}; if (d.k === 'type') { QF.typeChosen = !QF.typeChosen; } else QF.open[d.k] = !QF.open[d.k]; renderQF(); };
 ACT.qfOpenC = d => { QF.open['c_' + d.c] = !QF.open['c_' + d.c]; renderQF(); };
-ACT.qfP = d => { const a = QF.parcelles; const i = a.indexOf(d.id); i >= 0 ? a.splice(i, 1) : a.push(d.id); if (!QF.manual) suggestPlan(QF.planLabel); renderQF(); };
-ACT.qfCult = d => { const ids = d.c === '*' ? S.parcelles.map(p => p.id) : d.c === '_none' ? S.parcelles.filter(p => !curCult(p)).map(p => p.id) : S.parcelles.filter(p => curCult(p)?.culture === d.c).map(p => p.id); const all = ids.every(id => QF.parcelles.includes(id)); if (all) QF.parcelles = QF.parcelles.filter(id => !ids.includes(id)); else ids.forEach(id => { if (!QF.parcelles.includes(id)) QF.parcelles.push(id); }); if (!QF.manual) suggestPlan(); renderQF(); };
-ACT.qfT = d => { QF.type = d.k; QF.typeLocked = true; QF.typeChosen = true; QF.manual = false; QF.produits = []; QF.pickOpen = false; QF.prodCat = null; suggestPlan(); const cats = TYPE_CATS[QF.type] || []; QF.produits = QF.produits.filter(x => cats.includes(byId('stock', x.itemId)?.cat)); if (!QF.planLabel) QF.label = INTER_TYPES[d.k]; renderQF(); };
+ACT.qfP = d => { const a = QF.parcelles; const i = a.indexOf(d.id); if (i < 0) { const why = ivBlock(byId('parcelles', d.id), QF.type, { ressemis: QF.ressemis }); if (why) { toast(`${parcName(d.id)} : ${why}`, 'warn'); return; } } i >= 0 ? a.splice(i, 1) : a.push(d.id); if (!QF.manual) suggestPlan(QF.planLabel); renderQF(); };
+ACT.qfCult = d => { const ids0 = d.c === '*' ? S.parcelles.map(p => p.id) : d.c === '_none' ? S.parcelles.filter(p => !curCult(p)).map(p => p.id) : S.parcelles.filter(p => curCult(p)?.culture === d.c).map(p => p.id); const ids = ids0.filter(id => !ivBlock(byId('parcelles', id), QF.type, { ressemis: QF.ressemis })); if (!ids.length) { toast('Aucune parcelle de ce groupe ne convient pour cette opération', 'warn'); return; } const all = ids.every(id => QF.parcelles.includes(id)); if (all) QF.parcelles = QF.parcelles.filter(id => !ids.includes(id)); else ids.forEach(id => { if (!QF.parcelles.includes(id)) QF.parcelles.push(id); }); if (ids.length < ids0.length) toast(`${ids0.length - ids.length} parcelle(s) écartée(s) : opération impossible`, 'warn'); if (!QF.manual) suggestPlan(); renderQF(); };
+ACT.qfT = d => { const bad = QF.parcelles.filter(id => ivBlock(byId('parcelles', id), d.k)); if (bad.length) { QF.parcelles = QF.parcelles.filter(id => !bad.includes(id)); toast(`${bad.map(id => `${parcName(id)} : ${ivBlock(byId('parcelles', id), d.k)}`).join(' · ')} — retirée(s) de la sélection`, 'warn'); } QF.type = d.k; QF.typeLocked = true; QF.typeChosen = true; QF.manual = false; QF.produits = []; QF.pickOpen = false; QF.prodCat = null; suggestPlan(); const cats = TYPE_CATS[QF.type] || []; QF.produits = QF.produits.filter(x => cats.includes(byId('stock', x.itemId)?.cat)); if (!QF.planLabel) QF.label = INTER_TYPES[d.k]; renderQF(); };
 ACT.qfS = d => { QF.statut = d.v; if (d.v === 'planifiee' && QF.date <= TODAY) QF.date = addDays(TODAY, 1); if (d.v === 'realisee' && QF.date > TODAY) QF.date = TODAY; renderQF(); };
 ACT.qfDate = d => { QF.date = d.v; renderQF(); };
 ACT.qfM = d => { const a = QF.materiels; const i = a.indexOf(d.id); i >= 0 ? a.splice(i, 1) : a.push(d.id); renderQF(); };
@@ -871,6 +969,7 @@ ACT.qfNewP = () => { QF.newProd = true; renderQF(); setTimeout(() => document.ge
 ACT.qfNewCancel = () => { QF.newProd = false; renderQF(); };
 ACT.qfNewU = d => { QF.newUnit = d.v; document.querySelectorAll('#qfNewU .fchip').forEach(x => x.classList.toggle('on', x.dataset.v === d.v)); };
 ACT.qfNewAdd = d => { const nom = document.getElementById('qfNewNom')?.value.trim(); if (!nom) { toast('Indiquez le nom du produit', 'warn'); return; } const it = { id: uid('st'), nom, cat: d.c, unite: QF.newUnit || ({ phyto: 'L', amendements: 't' }[d.c] || 'kg'), qte: 0, pmp: 0, basePrix: 0, batch: 1, seuil: 0, capacite: null, emplacement: '', fournisseur: '', lot: '', dateEntree: TODAY }; S.stock.push(it); QF.newProd = false; QF.newUnit = null; ACT.qfAddP({ id: it.id }); toast('Produit créé (stock à zéro : pensez à saisir une entrée)'); };
+CH.qfRes = el => { QF.ressemis = el.checked; renderQF(); };
 ACT.qfCS = d => { QF.cultureSemis = d.v; renderQF(); };
 CH.qfCSsel = el => { if (el.value) { QF.cultureSemis = el.value; renderQF(); } };
 ACT.qfWho = d => { const a = QF.personnes; const i = a.indexOf(d.n); if (d.add) { if (i < 0) a.push(d.n); } else i >= 0 ? a.splice(i, 1) : a.push(d.n); renderQF(); };
@@ -892,6 +991,7 @@ function submitQF() {
   if (!QF.parcelles.length) throw new Error('Choisissez au moins une parcelle');
   const prods = QF.produits.filter(x => x.itemId && parseFloat(String(x.dose).replace(',', '.')) > 0).map(x => ({ itemId: x.itemId, dose: parseFloat(String(x.dose).replace(',', '.')) }));
   if (TYPE_REQ.includes(QF.type) && !prods.length) { QF.open.prod = true; renderQF(); throw new Error(QF.produits.some(x => x.itemId) ? 'Indiquez la dose par hectare du produit' : `Choisissez le ${QF.type === 'semis' ? 'semence' : 'produit'} utilisé`); }
+  if (!QF.edit) { const bad = QF.parcelles.map(id => [id, ivBlock(byId('parcelles', id), QF.type, { ressemis: QF.ressemis, date: QF.date })]).filter(x => x[1]); if (bad.length) throw new Error(bad.map(([id, w]) => `${parcName(id)} : ${w}`).join(' · ')); }
   if (QF.type === 'semis' && !QF.edit && QF.parcelles.some(id => !curCult(byId('parcelles', id))) && !QF.cultureSemis) throw new Error('Choisissez la culture semée');
   if (!QF.personnes.length) throw new Error('Indiquez qui ' + (QF.statut === 'realisee' ? 'a fait' : 'fera') + ' cette opération');
   rememberPeople(QF.personnes);
@@ -901,6 +1001,7 @@ function submitQF() {
   if (QF.statut === 'realisee' && QF.date > TODAY) throw new Error('Une opération réalisée ne peut pas être datée dans le futur');
   if (QF.edit) { const i = byId('interventions', QF.edit); i.custom = true; Object.assign(i, { type: QF.type, label: QF.label || INTER_TYPES[QF.type], date: QF.date, produits: prods, materiels: [...QF.materiels], heures: r2(QF.hHa * i.surface, 1), mo: QF.personnes.join(', '), personnes: [...QF.personnes], meteo: QF.meteo, obs: QF.obs, photos: QF.photos }); commit('Intervention modifiée'); return; }
   const warns = []; let total = 0;
+  if (QF.calc) Object.entries(QF.calc).forEach(([k, cs]) => { const it = byId('stock', QF.produits[k]?.itemId); if (it && cs.open) { const v = parseFloat(String(cs.pmg).replace(',', '.')); if (v > 0) it.pmg = v; const g = parseFloat(cs.gpd); if (g > 0 && (it.unite === 'dose' || it.unite === 'u')) it.grainsDose = g; } });
   if (QF.type === 'semis' && QF.cultureSemis) prods.forEach(x => { const it = byId('stock', x.itemId); if (it && it.cat === 'semences' && !it.cultureSem) it.cultureSem = QF.cultureSemis; });
   QF.parcelles.forEach(pid => {
     const p = byId('parcelles', pid);
