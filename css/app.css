@@ -738,3 +738,51 @@ details.more summary{cursor:pointer;font-weight:700;font-size:13px;color:var(--p
 .swz-item small{font-size:12px;color:var(--muted)}
 .swz-item .q{font-weight:800;font-size:15px;white-space:nowrap}
 .swz-item .q.warn{color:var(--c-stock)}.swz-item .q.danger{color:var(--late)}
+
+/* ===== V7 — écran de saisie d'opération ===== */
+.pcard .row>div span{display:block}
+.qf-status{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.qf-status button{display:flex;flex-direction:column;align-items:center;gap:3px;padding:14px 8px;border-radius:16px;border:2px solid var(--border);background:var(--surface);cursor:pointer;color:var(--text)}
+.qf-status button svg.i{width:24px;height:24px;color:var(--muted)}
+.qf-status button b{font-size:15.5px}
+.qf-status button small{font-size:11.5px;color:var(--muted);font-weight:600}
+.qf-status button.on{border-color:var(--primary);background:var(--primary-soft)}
+.qf-status button.on svg.i{color:var(--primary)}
+.qf-status button:last-child.on{border-color:var(--c-admin);background:color-mix(in srgb,var(--c-admin) 10%,var(--surface))}
+.qf-status button:last-child.on svg.i{color:var(--c-admin)}
+.qf-sec{background:var(--surface-2);border:1px solid var(--border);border-radius:16px;padding:10px 12px}
+.qf-h{display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;padding:4px 0;cursor:pointer;color:var(--text);text-align:left}
+.qf-h .n{width:24px;height:24px;border-radius:50%;background:var(--text);color:var(--bg);font-size:12px;font-weight:800;display:grid;place-items:center;flex:none}
+.qf-h .t{font-weight:800;font-size:15px}
+.qf-h .s{flex:1;text-align:right;font-size:13px;font-weight:650;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qf-h svg.i{color:var(--muted);flex:none}
+.qf-h.open{margin-bottom:10px}
+.qf-all{display:flex;justify-content:flex-end;margin:-4px 0 6px}
+.qf-all .lnk,.lnk{background:none;border:0;color:var(--primary);font-weight:750;font-size:13px;cursor:pointer;padding:4px 0}
+.qf-cult{--c:#999;background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--c);border-radius:12px;padding:8px 10px}
+.qf-cult+.qf-cult{margin-top:6px}
+.qf-ch{display:flex;align-items:center;gap:8px}
+.qf-cl{flex:1;display:flex;align-items:center;gap:8px;border:0;background:none;cursor:pointer;color:var(--text);text-align:left;min-width:0;padding:4px 0}
+.qf-cl .sw{width:12px;height:12px;border-radius:4px;background:var(--c);flex:none}
+.qf-cl b{font-size:14px;white-space:nowrap}
+.qf-cl small{flex:1;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qf-cl svg.i{width:16px;height:16px;color:var(--muted)}
+.qf-tout{height:34px;padding:0 12px;border-radius:9px;border:1.5px solid var(--border-strong);background:var(--surface);font-weight:750;font-size:12.5px;cursor:pointer;display:inline-flex;align-items:center;gap:4px;color:var(--text);flex:none}
+.qf-tout.on{background:var(--primary);border-color:var(--primary);color:#fff}
+.qf-tout svg.i{width:14px;height:14px}
+.qf-chips{display:flex;flex-wrap:wrap;gap:6px}
+.qf-chips span{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:3px 9px;font-size:12.5px;font-weight:650}
+.qf-prod{--c:var(--primary);background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--c);border-radius:12px;padding:10px;margin-bottom:8px}
+.qf-prod .st-ic{width:34px;height:34px;background:color-mix(in srgb,var(--c) 15%,transparent);color:var(--c)}
+.qf-prod b{display:block;font-size:14px}
+.qf-prod small{font-size:12px;color:var(--muted)}
+.qf-prod .stepper{flex:1;height:44px}
+.qf-prod .stepper input{flex:1;width:auto}
+.qf-tot{text-align:right;font-size:11.5px;color:var(--muted);font-weight:650}
+.qf-tot b{display:block;font-size:15px;color:var(--text)}
+.qf-picker{background:var(--surface);border:1px dashed var(--border-strong);border-radius:12px;padding:10px}
+.qf-picker .swz-list{max-height:300px;overflow-y:auto;margin-top:0}
+.qf-sum{position:sticky;bottom:-20px;margin:0 -20px -20px;padding:12px 20px;background:color-mix(in srgb,var(--surface) 96%,transparent);border-top:1px solid var(--border);font-size:13px;color:var(--text-2);backdrop-filter:blur(8px)}
+.qf-sum.warn{color:var(--warn-ink)}
+.qf-sum svg.i{width:14px;height:14px;vertical-align:-2px}
+#mf .qf-sec,#mf .qf-status,#mf .note{margin:0}

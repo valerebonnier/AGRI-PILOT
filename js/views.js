@@ -255,8 +255,20 @@ VIEWS.parcellaire = () => {
       ${list.map(p => { const c = curCult(p); return `<tr data-a="openParc" data-id="${p.id}"><td><div class="cell-main">${esc(p.nom)}</div><div class="cell-sub">${esc(p.cadastre || '')} · îlot ${p.ilot}</div></td><td>${esc(p.commune)}</td><td class="n">${nf(p.surface, 2)} ha</td><td>${esc(p.sol)}</td><td>${cultBadge(c?.culture)}</td><td>${esc(c?.variete || '—')}</td><td>${dfr(c?.semis)}</td><td class="n">${c?.rdtPrev ? nfx(c.rdtPrev, 1) + ' t/ha' : '—'}</td><td>${statutParc(p)}</td></tr>`; }).join('')}
       </tbody><tfoot><tr><td>Total</td><td></td><td class="n">${nf(sum(list, p => p.surface), 2)} ha</td><td colspan="6"></td></tr></tfoot></table></div></div>`}`;
 };
-const statutParc = p => { const c = curCult(p); if (!c) return '<span class="badge">Non assolée</span>'; if (c.rdtReel) return '<span class="badge">Récoltée</span>'; if (c.semis > TODAY) return '<span class="badge warn">À semer</span>'; return '<span class="badge ok">En culture</span>'; };
-const parcLi = p => { const c = curCult(p); if (p.contourProvisoire) return `<div class="li"><div class="ic warn">${ic('pin')}</div><div class="tx" data-a="openParc" data-id="${p.id}"><b>${esc(p.nom)}</b><span>${nf(p.surface, 2)} ha · contour à dessiner</span></div><button class="btn sm" data-a="editContour" data-id="${p.id}">${ic('pin')} Dessiner</button></div>`; return `<div class="li" data-a="openParc" data-id="${p.id}"><div class="ic" style="background:color-mix(in srgb,${CULTURES[c?.culture]?.color || '#999'} 22%,transparent);color:${CULTURES[c?.culture]?.color}">${ic('wheat')}</div><div class="tx"><b>${esc(p.nom)}</b><span>${nf(p.surface, 2)} ha · ${esc(CULTURES[c?.culture]?.nom || 'Non assolée')}</span></div>${statutParc(p)}<button class="btn sm icon" style="margin-left:4px" data-a="quickIv" data-pid="${p.id}" aria-label="Saisir une opération">${ic('plus')}</button></div>`; };
+function parcState(p) {
+  const c = curCult(p); if (!c) return { k: 'none', l: 'Non assolée', cls: '' };
+  const ivs = S.interventions.filter(i => i.parcelleId === p.id && i.campagne === CURRENT_CAMP);
+  const done = t => ivs.filter(i => i.statut === 'realisee' && i.type === t).sort((a, b) => b.date.localeCompare(a.date))[0];
+  const rec = done('recolte'); if (rec || c.rdtReel) return { k: 'recoltee', l: 'Récoltée', cls: '', d: rec?.date };
+  const se = done('semis'); if (se) return { k: 'culture', l: 'En culture', cls: 'ok', d: se.date };
+  const planSemis = ivs.some(i => i.type === 'semis' && i.statut === 'planifiee');
+  const prep = ivs.filter(i => i.statut === 'realisee' && ['travail_sol', 'preparation'].includes(i.type)).length;
+  if (planSemis || c.semis > TODAY) return prep ? { k: 'prep', l: 'En préparation', cls: 'info' } : { k: 'asemer', l: 'À semer', cls: 'warn' };
+  return { k: 'culture', l: 'En culture', cls: 'ok' };
+}
+const statutParc = p => { const s = parcState(p); return `<span class="badge ${s.cls}">${s.l}</span>`; };
+function lastOp(p) { return S.interventions.filter(i => i.parcelleId === p.id && i.statut === 'realisee').sort((a, b) => b.date.localeCompare(a.date))[0]; }
+const parcLi = p => { const c = curCult(p); if (p.contourProvisoire) return `<div class="li"><div class="ic warn">${ic('pin')}</div><div class="tx" data-a="openParc" data-id="${p.id}"><b>${esc(p.nom)}</b><span>${nf(p.surface, 2)} ha · contour à dessiner</span></div><button class="btn sm" data-a="editContour" data-id="${p.id}">${ic('pin')} Dessiner</button></div>`; return `<div class="li" data-a="openParc" data-id="${p.id}"><div class="ic" style="background:color-mix(in srgb,${CULTURES[c?.culture]?.color || '#999'} 22%,transparent);color:${CULTURES[c?.culture]?.color}">${ic('wheat')}</div><div class="tx"><b>${esc(p.nom)}</b><span>${nf(p.surface, 2)} ha · ${esc(CULTURES[c?.culture]?.nom || 'Non assolée')}${(() => { const l = lastOp(p); return l ? ` · ${esc(l.label)} ${dshort(l.date)}` : ''; })()}</span></div>${statutParc(p)}<button class="btn sm icon" style="margin-left:4px" data-a="quickIv" data-pid="${p.id}" aria-label="Saisir une opération">${ic('plus')}</button></div>`; };
 IN.parcQ = el => { UI.q.parc = el.value; const pos = el.selectionStart; render(); const i = document.querySelector('[data-in=parcQ]'); i.focus(); i.setSelectionRange(pos, pos); };
 ACT.parcCult = d => { UI.f.parcCult = d.c || null; render(); };
 ACT.openParc = d => openDrawer('parcelle', d.id);
@@ -391,7 +403,7 @@ DRAWERS.parcelle = id => {
     const same = c ? S.parcelles.filter(x => curCult(x)?.culture === c.culture) : [];
     const next = S.interventions.filter(i => i.parcelleId === p.id && i.statut === 'planifiee').sort((a, b) => a.date.localeCompare(b.date)).slice(0, 4);
     const last = S.interventions.filter(i => i.parcelleId === p.id && i.statut === 'realisee').sort((a, b) => b.date.localeCompare(a.date)).slice(0, 4);
-    body += `<div class="pcard" style="--c:${col}"><div class="row"><span class="sw"></span><div style="flex:1;min-width:0"><b>${esc(CULTURES[c?.culture]?.nom || 'Non assolée')}${c?.variete ? ` · ${esc(c.variete)}` : ''}</b><span>${nf(p.surface, 2)} ha · ${esc(p.commune || 'commune ?')}${c?.semis ? ` · semis ${dshort(c.semis)}` : ''}</span></div>${statutParc(p)}</div></div>
+    body += `<div class="pcard" style="--c:${col}"><div class="row"><span class="sw"></span><div style="flex:1;min-width:0"><b>${esc(CULTURES[c?.culture]?.nom || 'Non assolée')}${c?.variete ? ` · ${esc(c.variete)}` : ''}</b><span>${nf(p.surface, 2)} ha${p.commune ? ' · ' + esc(p.commune) : ''}${c?.semis ? ` · semis ${c.semisFait ? 'fait le' : 'prévu le'} ${dshort(c.semis)}` : ''}</span>${(() => { const l = lastOp(p); return l ? `<span>Dernière opération : <b style="display:inline;font-size:inherit">${esc(l.label)}</b> · ${dshort(l.date)}</span>` : ''; })()}</div>${statutParc(p)}</div></div>
     <div class="sec-h" style="margin-top:16px"><h3>Saisir une opération</h3></div>
     <div class="op-grid">${OP_TYPES.map(([k, l]) => `<button class="op" data-a="quickIv" data-pid="${p.id}" data-type="${k}"><span class="ti">${ic(IV_ICON[k])}</span>${l}</button>`).join('')}</div>
     ${same.length > 1 ? `<button class="btn mt" style="width:100%;justify-content:flex-start" data-a="quickIv" data-pids="${same.map(x => x.id).join(',')}">${ic('layers')} Même opération sur tout le ${esc(CULTURES[c.culture].nom.toLowerCase())} · ${same.length} parcelles · ${nf(sum(same, x => x.surface), 1)} ha</button>` : ''}
@@ -577,7 +589,7 @@ ACT.validateIv = d => {
       i.date = f.date || TODAY; i.campagne = i.campagne; i.heures = +f.heures || 0; i.meteo = f.meteo; i.obs = f.obs;
       i.produits.forEach((x, k) => { if (f['dose' + k] != null) x.dose = +f['dose' + k]; });
       if (f.recolte != null) { if (!(+f.recolte > 0)) throw new Error('Quantité récoltée requise'); i.recolteQte = +f.recolte; }
-      const w = applyIntervention(i);
+      const w = applyIntervention(i); afterApply(i);
       commit(w.length ? 'Intervention validée — ' + w.join(' · ') : `Intervention validée · ${eur(i.coutIntrants)} d'intrants déduits du stock`, w.length ? 'warn' : '');
     }
   });
@@ -596,12 +608,12 @@ ACT.quickIv = d => quickIvForm({ pid: d.pid, fav: d.fav, type: d.type, pids: d.p
  * marquée réalisée au lieu de créer un doublon.
  */
 function quickIvForm({ pid, pids, fav, edit, type, planLabel } = {}) {
-  if (edit) { const i = byId('interventions', edit); QF = { edit, parcelles: [i.parcelleId], type: i.type, label: i.label, date: i.date, statut: 'planifiee', produits: i.produits.map(x => ({ ...x })), materiels: [...i.materiels], hHa: i.heures / i.surface, mo: i.mo, meteo: i.meteo, obs: i.obs, photos: i.photos || [], recolte: '' }; }
-  else QF = { parcelles: pids ? [...pids] : pid ? [pid] : [], type: type || 'protection', typeLocked: !!type, label: '', date: TODAY, statut: 'realisee', produits: [], materiels: [], hHa: 0.1, mo: S.exploitation.mainOeuvre[0]?.nom || '', meteo: '', obs: '', photos: [], recolte: '', saveFav: false, autoLabel: true, planLabel: null, manual: false };
+  if (edit) { const i = byId('interventions', edit); QF = { edit, typeChosen: true, open: {}, parcelles: [i.parcelleId], type: i.type, label: i.label, date: i.date, statut: 'planifiee', produits: i.produits.map(x => ({ ...x })), materiels: [...i.materiels], hHa: i.heures / i.surface, mo: i.mo, meteo: i.meteo, obs: i.obs, photos: i.photos || [], recolte: '' }; }
+  else QF = { parcelles: pids ? [...pids] : pid ? [pid] : [], type: type || 'protection', typeLocked: !!type, typeChosen: !!type || !!planLabel, open: {}, label: '', date: TODAY, statut: 'realisee', produits: [], materiels: [], hHa: 0.1, mo: S.exploitation.mainOeuvre[0]?.nom || '', meteo: '', obs: '', photos: [], recolte: '', saveFav: false, autoLabel: true, planLabel: null, manual: false };
   if (fav) { applyFav(fav); QF.manual = true; }
   else if (!edit && QF.parcelles.length) suggestPlan(planLabel);
   const n = QF.parcelles.length;
-  openModal({ title: edit ? 'Modifier l’intervention' : n > 1 ? `Opération sur ${n} parcelles` : 'Nouvelle opération', wide: true, body: '', submit: edit ? 'Enregistrer' : 'Enregistrer', onSubmit: submitQF, onMount: () => renderQF() });
+  openModal({ title: edit ? 'Modifier l’opération' : 'Saisir une opération', wide: true, body: '', submit: 'Enregistrer', onSubmit: submitQF, onMount: () => renderQF() });
 }
 function applyFav(fid) { const f = S.favoris.find(x => x.id === fid); if (!f) return; Object.assign(QF, { type: f.type, label: f.label, produits: f.produits.map(x => ({ ...x })), materiels: [...f.materiels], hHa: f.hHa, autoLabel: false, planLabel: null }); }
 /** Planifiées correspondant à un libellé sur les parcelles choisies. */
@@ -623,71 +635,123 @@ function suggestPlan(forceLabel) {
   const ref = best[0];
   Object.assign(QF, { type: ref.type, label: ref.label, produits: ref.produits.map(x => ({ itemId: x.itemId, dose: x.dose })), materiels: [...ref.materiels], hHa: ref.heures / ref.surface, autoLabel: false, planLabel: ref.label });
 }
+/* ---- Écran de saisie d'opération (V7) : statut → opération → parcelles → produits → détails ---- */
+const TYPE_CATS = { semis: ['semences'], fertilisation: ['engrais', 'amendements'], desherbage: ['phyto'], protection: ['phyto'], irrigation: [], recolte: [], travail_sol: [], preparation: [], autre: ['semences', 'engrais', 'phyto', 'amendements'] };
+const TYPE_REQ = ['semis', 'fertilisation', 'desherbage', 'protection'];
+const DOSE_STEP = { kg: 10, L: 0.1, t: 0.1, dose: 0.5, u: 1 };
 function qfSurface() { return r2(sum(QF.parcelles, id => byId('parcelles', id)?.surface || 0), 2); }
+function qfSecHead(n, title, sum2, key, open) { return `<button type="button" class="qf-h ${open ? 'open' : ''}" data-a="qfToggle" data-k="${key}"><span class="n">${n}</span><span class="t">${title}</span><span class="s">${sum2 || ''}</span>${ic(open ? 'up' : 'down')}</button>`; }
 function renderQF() {
   const f = document.getElementById('mf'); if (!f) return;
-  const surf = qfSurface();
-  const intr = S.stock.filter(x => x.cat !== 'production' && x.cat !== 'carburants');
-  const cost = sum(QF.produits, x => { const it = byId('stock', x.itemId); return it ? x.dose * surf * it.pmp : 0; });
-  const warn = QF.statut === 'realisee' ? QF.produits.map(x => { const it = byId('stock', x.itemId); const q = x.dose * surf; return it && it.qte < q ? `${esc(it.nom)} : ${nfx(it.qte, 1)} ${it.unite} disponibles pour ${nfx(q, 1)}` : null; }).filter(Boolean) : [];
-  f.innerHTML = `
-  ${S.favoris.length && !QF.edit ? `<div class="field"><span>${ic('star')} Favoris — un geste pour tout préremplir</span><div class="fchips">${S.favoris.map(x => `<span class="fchip" style="--c:var(--c-cult)" data-a="qfFav" data-id="${x.id}">${ic(IV_ICON[x.type] || 'star')} ${esc(x.label)}</span>`).join('')}</div></div>` : ''}
-  <div class="field"><span>Parcelle(s) * ${surf ? `<span class="muted">— ${QF.parcelles.length} sélectionnée(s) · ${nf(surf, 2)} ha</span>` : ''}</span>
-  ${!QF.edit ? `<div class="fchips" style="margin-bottom:8px"><span class="fchip ${QF.parcelles.length === S.parcelles.length ? 'on' : ''}" style="--c:var(--text)" data-a="qfCult" data-c="*">Toutes · ${S.parcelles.length}</span>${assolement(CURRENT_CAMP).map(a => { const ids = S.parcelles.filter(p => curCult(p)?.culture === a.key).map(p => p.id); const on = ids.every(id => QF.parcelles.includes(id)); return `<span class="fchip ${on ? 'on' : ''}" style="--c:${a.color}" data-a="qfCult" data-c="${a.key}"><span class="cat-dot" style="--c:${a.color}"></span>Tout ${esc(a.label.toLowerCase())} · ${ids.length} parc. · ${nf(a.value, 1)} ha</span>`; }).join('')}</div>` : ''}
-  <div class="pick-grid">${[...S.parcelles].sort((a, b) => (curCult(a)?.culture || '').localeCompare(curCult(b)?.culture || '')).map(p => { const c = curCult(p); return `<div class="pick ${QF.parcelles.includes(p.id) ? 'on' : ''}" style="--c:${CULTURES[c?.culture]?.color || '#999'}" data-a="qfP" data-id="${p.id}"><i class="sw"></i><span>${esc(p.nom)}<small>${nf(p.surface, 1)} ha · ${esc(CULTURES[c?.culture]?.nom || '—')}</small></span><span class="ck">${QF.parcelles.includes(p.id) ? ic('check') : ''}</span></div>`; }).join('')}</div></div>
-  ${QF.planLabel && !QF.edit ? (() => { const pl = qfPlanned(QF.planLabel, QF.type); const np = new Set(pl.map(i => i.parcelleId)).size; return `<div class="note info">${ic('sprout')}<span>Prévu dans l’itinéraire : <b>${esc(QF.planLabel)}</b> (${dfr(pl[0]?.date)}) sur ${np} des ${QF.parcelles.length} parcelle(s). ${QF.statut === 'realisee' ? `Ces ${np} travaux seront marqués réalisés${np < QF.parcelles.length ? ', les autres parcelles reçoivent une nouvelle intervention' : ''}.` : 'Ils seront mis à jour.'}</span></div>`; })() : ''}
-  <div class="field"><span>Type d’intervention</span><div class="type-grid">${Object.entries(INTER_TYPES).map(([k, l]) => `<div class="pick ${QF.type === k ? 'on' : ''}" data-a="qfT" data-k="${k}">${ic(IV_ICON[k])}${l.replace(' / plantation', '').replace(' des cultures', '')}</div>`).join('')}</div></div>
-  <div class="grid3"><label class="field"><span>Libellé</span><input class="inp" data-in="qf" data-k="label" value="${esc(QF.label || INTER_TYPES[QF.type])}"></label><label class="field"><span>Date</span><input class="inp" type="date" data-in="qf" data-k="date" value="${QF.date}"></label>
-  <div class="field"><span>Statut</span><div class="seg" style="height:42px;align-items:center">${QF.edit ? '<button type="button" class="on">Planifiée</button>' : [['realisee', 'Réalisée'], ['planifiee', 'Planifiée']].map(([v, l]) => `<button type="button" class="${QF.statut === v ? 'on' : ''}" data-a="qfS" data-v="${v}">${l}</button>`).join('')}</div></div></div>
-  <div class="field"><span>Produits</span>
-  ${QF.produits.map((x, k) => { const it = byId('stock', x.itemId); return `<div class="row" style="gap:8px;margin-bottom:6px"><select class="inp" data-ch="qfProd" data-i="${k}" style="flex:2"><option value="">— Produit —</option>${Object.entries(STOCK_CATS).filter(([c]) => c !== 'production' && c !== 'carburants').map(([c, l]) => `<optgroup label="${l}">${opts(intr.filter(s => s.cat === c).map(s => [s.id, `${s.nom} — ${nfx(s.qte, 1)} ${s.unite}`]), x.itemId)}</optgroup>`).join('')}</select><input class="inp" type="number" step="0.01" min="0" data-in="qfDose" data-i="${k}" value="${x.dose}" style="flex:1;min-width:80px" placeholder="Dose/ha"><span class="small muted" style="width:96px">${it ? `${it.unite}/ha<br><b>${nfx(x.dose * surf, 1)} ${it.unite}</b>` : ''}</span><button type="button" class="btn sm icon g" data-a="qfDel" data-i="${k}">${ic('x')}</button></div>`; }).join('')}
-  <button type="button" class="btn sm" data-a="qfAdd" style="align-self:flex-start">${ic('plus')} Ajouter un produit</button></div>
-  <div class="field"><span>Matériel utilisé</span><div class="pick-grid">${S.materiel.map(m => `<div class="pick ${QF.materiels.includes(m.id) ? 'on' : ''}" style="--c:var(--c-mat)" data-a="qfM" data-id="${m.id}"><span>${esc(m.marque)} ${esc(m.modele)}<small>${MAT_CATS[m.cat]}</small></span><span class="ck">${QF.materiels.includes(m.id) ? ic('check') : ''}</span></div>`).join('')}</div></div>
-  <div class="grid3"><label class="field"><span>Temps de travail (h)</span><input class="inp" type="number" step="0.1" data-in="qfH" value="${r2(QF.hHa * surf, 1)}"><small>${nfx(QF.hHa, 2)} h/ha</small></label>
-  <label class="field"><span>Main-d'œuvre</span><select class="inp" data-ch="qfMo">${opts(S.exploitation.mainOeuvre.map(m => [m.nom, m.nom]), QF.mo)}</select></label>
-  <label class="field"><span>Météo (facultatif)</span><input class="inp" data-in="qf" data-k="meteo" value="${esc(QF.meteo)}" placeholder="Sec, 12 °C, vent faible"></label></div>
-  ${QF.type === 'recolte' && QF.statut === 'realisee' ? `<label class="field"><span>Quantité récoltée totale (t) *</span><input class="inp" type="number" step="0.01" data-in="qf" data-k="recolte" value="${QF.recolte}"><small>${QF.recolte && surf ? `${nfx(QF.recolte / surf, 2)} t/ha — ` : ''}répartie au prorata des surfaces et ajoutée au stock de production</small></label>` : ''}
-  <label class="field"><span>Observations</span><textarea class="inp" data-in="qf" data-k="obs" placeholder="Facultatif">${esc(QF.obs)}</textarea></label>
-  <div class="field"><span>Photos</span><div class="row wrap"><label class="btn sm">${ic('camera')} Ajouter<input type="file" accept="image/*" multiple hidden data-ch="qfPhoto"></label><div class="photos">${QF.photos.map(p => `<img src="${p}">`).join('')}</div></div></div>
-  <div class="note ${warn.length ? 'warn' : ''}">${ic(warn.length ? 'alert' : 'info')}<span>${surf ? `${nf(surf, 2)} ha · coût intrants estimé <b>${eur(cost)}</b> (${eur(surf ? cost / surf : 0)}/ha)` : 'Choisissez au moins une parcelle'}${QF.statut === 'realisee' ? ' · déduction automatique des stocks et du carburant' : ''}${warn.length ? '<br>Stock insuffisant : ' + warn.join(' · ') : ''}</span></div>
-  ${!QF.edit ? `<label class="row small"><input type="checkbox" data-ch="qfFavSave" ${QF.saveFav ? 'checked' : ''}> Enregistrer comme favori</label>` : ''}`;
+  const surf = qfSurface(), cats = TYPE_CATS[QF.type] || [], needProd = TYPE_REQ.includes(QF.type);
+  const cost = sum(QF.produits, x => { const it = byId('stock', x.itemId); return it ? (+x.dose || 0) * surf * it.pmp : 0; });
+  const warn = QF.statut === 'realisee' ? QF.produits.map(x => { const it = byId('stock', x.itemId); const q = (+x.dose || 0) * surf; return it && it.qte < q ? `${esc(it.nom)} : ${qty(it.qte, it.unite)} en stock pour ${qty(q, it.unite)}` : null; }).filter(Boolean) : [];
+  QF.open = QF.open || {};
+  const many = S.parcelles.length > 6;
+  if (QF.open.parc === undefined && !QF.parcelles.length) QF.open.parc = true;
+  const openParc = !!QF.open.parc;
+  // 1. Statut
+  let h = !QF.edit ? `<div class="qf-status">${[['realisee', 'check', 'Réalisée', 'Déduit les stocks maintenant'], ['planifiee', 'calendar', 'À planifier', 'Ajouté aux tâches']].map(([v, i, l, s]) => `<button type="button" class="${QF.statut === v ? 'on' : ''}" data-a="qfS" data-v="${v}">${ic(i)}<b>${l}</b><small>${s}</small></button>`).join('')}</div>` : '';
+  // 2. Opération
+  h += `<div class="qf-sec">${qfSecHead(1, 'Opération', QF.open.type === false || QF.typeChosen ? INTER_TYPES[QF.type] : '', 'type', QF.open.type !== false && !QF.typeChosen)}
+    ${QF.open.type !== false && !QF.typeChosen ? `<div class="type-grid">${Object.entries(INTER_TYPES).map(([k, l]) => `<div class="pick ${QF.type === k ? 'on' : ''}" data-a="qfT" data-k="${k}">${ic(IV_ICON[k])}${l.replace(' / plantation', '').replace(' des cultures', '')}</div>`).join('')}</div>` : ''}</div>`;
+  // 3. Parcelles
+  const ass = assolement(CURRENT_CAMP); const noCult = S.parcelles.filter(p => !curCult(p));
+  const parcSum = QF.parcelles.length ? `${QF.parcelles.length} parcelle${QF.parcelles.length > 1 ? 's' : ''} · ${nf(surf, 1)} ha` : '<span style="color:var(--late)">à choisir</span>';
+  h += `<div class="qf-sec">${qfSecHead(2, 'Parcelles', parcSum, 'parc', openParc)}`;
+  if (openParc) {
+    if (!many) h += `<div class="pick-grid">${S.parcelles.map(p => qfParcPick(p)).join('')}</div>`;
+    else h += `${!QF.edit ? `<div class="qf-all"><button type="button" class="lnk" data-a="qfCult" data-c="*">${QF.parcelles.length === S.parcelles.length ? 'Tout désélectionner' : 'Tout sélectionner'}</button></div>` : ''}${[...ass.map(a => ({ key: a.key, label: a.label, color: a.color, ps: S.parcelles.filter(p => curCult(p)?.culture === a.key) })), ...(noCult.length ? [{ key: '_none', label: 'Non assolées', color: '#999', ps: noCult }] : [])].map(g => { const sel = g.ps.filter(p => QF.parcelles.includes(p.id)); const op = QF.open['c_' + g.key]; return `<div class="qf-cult" style="--c:${g.color}"><div class="qf-ch"><button type="button" class="qf-cl" data-a="qfOpenC" data-c="${g.key}"><span class="sw"></span><b>${esc(g.label)}</b><small>${g.ps.length} parc. · ${nf(sum(g.ps, p => p.surface), 1)} ha${sel.length ? ` · <span style="color:var(--primary);font-weight:800">${sel.length} choisie${sel.length > 1 ? 's' : ''}</span>` : ''}</small>${ic(op ? 'up' : 'down')}</button><button type="button" class="qf-tout ${sel.length === g.ps.length ? 'on' : ''}" data-a="qfCult" data-c="${g.key}">${sel.length === g.ps.length ? ic('check') + ' Tout' : 'Tout'}</button></div>${op ? `<div class="pick-grid" style="margin-top:8px">${g.ps.map(p => qfParcPick(p, true)).join('')}</div>` : ''}</div>`; }).join('')}`;
+    if (QF.parcelles.length) h += `<button type="button" class="btn sm mt" data-a="qfToggle" data-k="parc">${ic('check')} Valider la sélection</button>`;
+  } else if (QF.parcelles.length) h += `<div class="qf-chips">${QF.parcelles.slice(0, 6).map(id => `<span>${esc(parcName(id))}</span>`).join('')}${QF.parcelles.length > 6 ? `<span>+${QF.parcelles.length - 6}</span>` : ''}</div>`;
+  h += `</div>`;
+  // plan
+  if (QF.planLabel && !QF.edit) { const pl = qfPlanned(QF.planLabel, QF.type); const np = new Set(pl.map(i => i.parcelleId)).size; if (np) h += `<div class="note info">${ic('sprout')}<span>Prévu : <b>${esc(QF.planLabel)}</b> (${dfr(pl[0]?.date)}) sur ${np} parcelle(s). ${QF.statut === 'realisee' ? 'Ces travaux seront marqués réalisés.' : 'Ils seront mis à jour.'}</span></div>`; }
+  // 4. Produits
+  if (cats.length) {
+    const pc = QF.prodCat && cats.includes(QF.prodCat) ? QF.prodCat : cats[0];
+    h += `<div class="qf-sec">${qfSecHead(3, needProd ? 'Produit' + (QF.type === 'semis' ? ' (semence)' : '') : 'Produits (facultatif)', QF.produits.filter(x => x.itemId).length ? `${QF.produits.filter(x => x.itemId).length} choisi(s)` : needProd ? '<span style="color:var(--late)">obligatoire</span>' : '', 'prod', true)}
+    ${QF.produits.map((x, k) => { const it = byId('stock', x.itemId); if (!it) return ''; const m = STOCK_META[it.cat]; const tot = (+x.dose || 0) * surf; return `<div class="qf-prod" style="--c:${m.color}"><div class="row" style="gap:10px"><span class="st-ic">${ic(m.icon)}</span><div style="flex:1;min-width:0"><b>${esc(it.nom)}</b><small>en stock : ${qty(it.qte, it.unite)}</small></div><button type="button" class="btn sm icon g" data-a="qfDel" data-i="${k}" aria-label="Retirer">${ic('x')}</button></div>
+      <div class="row" style="gap:10px;margin-top:8px"><div class="stepper"><button type="button" data-a="qfDose" data-i="${k}" data-d="-1">${ic('minus')}</button><input inputmode="decimal" data-in="qfDose" data-i="${k}" value="${String(x.dose ?? '').replace('.', ',')}" placeholder="dose"><span>${it.unite}/ha</span><button type="button" data-a="qfDose" data-i="${k}" data-d="1">${ic('plus')}</button></div><div class="qf-tot">Total<b data-tot="${k}">${qty(r2(tot, 2), it.unite)}</b></div></div></div>`; }).join('')}
+    ${QF.pickOpen || !QF.produits.filter(x => x.itemId).length ? `<div class="qf-picker">${cats.length > 1 ? `<div class="fchips" style="margin-bottom:8px">${cats.map(c => `<button type="button" class="fchip ${pc === c ? 'on' : ''}" style="--c:${STOCK_META[c].color}" data-a="qfPC" data-c="${c}">${ic(STOCK_META[c].icon)} ${STOCK_META[c].label}</button>`).join('')}</div>` : ''}
+      ${QF.newProd ? `<div class="qf-new"><input class="inp" id="qfNewNom" placeholder="Nom du nouveau produit ${STOCK_META[pc].label.toLowerCase()}"><div class="ob-chips" id="qfNewU" style="margin-top:8px">${[['kg', 'kg'], ['t', 't'], ['L', 'L'], ['dose', 'dose'], ['u', 'unité']].map(([v, l]) => `<button type="button" class="fchip ${v === (QF.newUnit || ({ phyto: 'L', amendements: 't' }[pc] || 'kg')) ? 'on' : ''}" style="--c:var(--primary)" data-a="qfNewU" data-v="${v}">${l}</button>`).join('')}</div><div class="row mt" style="gap:8px"><button type="button" class="btn" data-a="qfNewCancel">Annuler</button><button type="button" class="btn p" style="flex:1" data-a="qfNewAdd" data-c="${pc}">${ic('plus')} Ajouter</button></div></div>`
+        : `<div class="swz-list">${S.stock.filter(i => i.cat === pc && !QF.produits.some(x => x.itemId === i.id)).sort((a, b) => (b.qte > 0) - (a.qte > 0) || a.nom.localeCompare(b.nom)).map(i => `<button type="button" class="swz-item" style="--c:${STOCK_META[pc].color}" data-a="qfAddP" data-id="${i.id}"><span class="st-ic">${ic(STOCK_META[pc].icon)}</span><span class="t"><b>${esc(i.nom)}</b></span><span class="q ${i.qte <= 0 ? 'danger' : ''}">${qty(i.qte, i.unite)}</span></button>`).join('') || '<div class="empty small">Aucun produit dans cette catégorie</div>'}</div><button type="button" class="btn sm mt" style="border-style:dashed;width:100%" data-a="qfNewP">${ic('plus')} Nouveau produit ${STOCK_META[pc].label.toLowerCase()}</button>`}
+    </div>` : `<button type="button" class="btn sm" data-a="qfPickOpen">${ic('plus')} Ajouter un produit</button>`}</div>`;
+  }
+  // Semis : variété ; Récolte : quantité
+  if (QF.type === 'semis') h += `<label class="field"><span>Variété (facultatif)</span><input class="inp" data-in="qf" data-k="variete" value="${esc(QF.variete || (QF.parcelles.length === 1 ? curCult(byId('parcelles', QF.parcelles[0]))?.variete || '' : ''))}" placeholder="Ex. : Chevignon"></label>`;
+  if (QF.type === 'recolte' && QF.statut === 'realisee') h += `<label class="field"><span>Quantité récoltée totale (t) *</span><input class="inp" inputmode="decimal" data-in="qf" data-k="recolte" value="${QF.recolte}" style="font-size:22px;font-weight:800;height:54px"><small>${QF.recolte && surf ? `${nfx(parseFloat(String(QF.recolte).replace(',', '.')) / surf, 2)} t/ha · ` : ''}répartie selon les surfaces et ajoutée au stock</small></label>`;
+  // 5. Date et détails
+  const det = QF.open.det;
+  h += `<div class="qf-sec">${qfSecHead(cats.length ? 4 : 3, 'Date et détails', `${QF.date === TODAY ? "aujourd'hui" : dfr(QF.date)}${QF.materiels.length ? ` · ${QF.materiels.length} matériel(s)` : ''}`, 'det', det)}
+    <div class="row" style="gap:8px;flex-wrap:wrap">${[[TODAY, "Aujourd'hui"], [addDays(TODAY, -1), 'Hier'], ...(QF.statut === 'planifiee' ? [[addDays(TODAY, 1), 'Demain'], [addDays(TODAY, 7), 'Dans 7 j']] : [])].map(([d, l]) => `<button type="button" class="fchip ${QF.date === d ? 'on' : ''}" style="--c:var(--primary)" data-a="qfDate" data-v="${d}">${l}</button>`).join('')}<input class="inp" type="date" data-in="qf" data-k="date" value="${QF.date}" style="width:auto;height:38px"></div>
+    ${det ? `<div class="field mt"><span>Matériel utilisé</span><div class="pick-grid">${S.materiel.map(m => `<div class="pick ${QF.materiels.includes(m.id) ? 'on' : ''}" style="--c:var(--c-mat)" data-a="qfM" data-id="${m.id}"><span>${esc(m.marque)} ${esc(m.modele)}<small>${MAT_CATS[m.cat]}</small></span><span class="ck">${QF.materiels.includes(m.id) ? ic('check') : ''}</span></div>`).join('') || '<span class="small muted">Aucun matériel enregistré</span>'}</div></div>
+    <div class="grid2 mt"><label class="field"><span>Temps de travail (h)</span><input class="inp" inputmode="decimal" data-in="qfH" value="${r2(QF.hHa * surf, 1)}"></label><label class="field"><span>Main-d'œuvre</span><select class="inp" data-ch="qfMo">${opts(S.exploitation.mainOeuvre.map(m => [m.nom, m.nom]), QF.mo)}</select></label></div>
+    <label class="field mt"><span>Météo</span><input class="inp" data-in="qf" data-k="meteo" value="${esc(QF.meteo)}" placeholder="Facultatif"></label>
+    <label class="field mt"><span>Observations</span><textarea class="inp" data-in="qf" data-k="obs" placeholder="Facultatif">${esc(QF.obs)}</textarea></label>
+    <div class="field mt"><span>Photos</span><div class="row wrap"><label class="btn sm">${ic('camera')} Ajouter<input type="file" accept="image/*" multiple hidden data-ch="qfPhoto"></label><div class="photos">${QF.photos.map(p => `<img src="${p}">`).join('')}</div></div></div>
+    ${!QF.edit ? `<label class="row small mt"><input type="checkbox" data-ch="qfFavSave" ${QF.saveFav ? 'checked' : ''}> Enregistrer comme favori</label>` : ''}` : ''}</div>`;
+  // Résumé
+  h += `<div class="qf-sum ${warn.length ? 'warn' : ''}">${surf ? `<b>${QF.parcelles.length} parc. · ${nf(surf, 1)} ha</b>${cost ? ` · intrants ≈ ${eur(cost)}` : ''}${warn.length ? `<br>${ic('alert')} Stock insuffisant : ${warn.join(' · ')}` : ''}` : 'Choisissez au moins une parcelle'}</div>`;
+  f.innerHTML = h;
 }
+function qfParcPick(p, noCult) { const c = curCult(p); const on = QF.parcelles.includes(p.id); return `<div class="pick ${on ? 'on' : ''}" style="--c:${CULTURES[c?.culture]?.color || '#999'}" data-a="qfP" data-id="${p.id}"><i class="sw"></i><span>${esc(p.nom)}<small>${nf(p.surface, 1)} ha${noCult ? '' : ' · ' + esc(CULTURES[c?.culture]?.nom || '—')}</small></span><span class="ck">${on ? ic('check') : ''}</span></div>`; }
+ACT.qfToggle = d => { QF.open = QF.open || {}; if (d.k === 'type') { QF.typeChosen = !QF.typeChosen; } else QF.open[d.k] = !QF.open[d.k]; renderQF(); };
+ACT.qfOpenC = d => { QF.open['c_' + d.c] = !QF.open['c_' + d.c]; renderQF(); };
 ACT.qfP = d => { const a = QF.parcelles; const i = a.indexOf(d.id); i >= 0 ? a.splice(i, 1) : a.push(d.id); if (!QF.manual) suggestPlan(QF.planLabel); renderQF(); };
-ACT.qfCult = d => { const ids = d.c === '*' ? S.parcelles.map(p => p.id) : S.parcelles.filter(p => curCult(p)?.culture === d.c).map(p => p.id); const all = ids.every(id => QF.parcelles.includes(id)); if (all) QF.parcelles = QF.parcelles.filter(id => !ids.includes(id)); else ids.forEach(id => { if (!QF.parcelles.includes(id)) QF.parcelles.push(id); }); if (!QF.manual) suggestPlan(); renderQF(); };
-ACT.qfT = d => { QF.type = d.k; QF.typeLocked = true; QF.manual = false; QF.produits = []; suggestPlan(); if (!QF.planLabel && !QF.produits.length) QF.label = INTER_TYPES[d.k]; renderQF(); };
-ACT.qfS = d => { QF.statut = d.v; renderQF(); };
+ACT.qfCult = d => { const ids = d.c === '*' ? S.parcelles.map(p => p.id) : d.c === '_none' ? S.parcelles.filter(p => !curCult(p)).map(p => p.id) : S.parcelles.filter(p => curCult(p)?.culture === d.c).map(p => p.id); const all = ids.every(id => QF.parcelles.includes(id)); if (all) QF.parcelles = QF.parcelles.filter(id => !ids.includes(id)); else ids.forEach(id => { if (!QF.parcelles.includes(id)) QF.parcelles.push(id); }); if (!QF.manual) suggestPlan(); renderQF(); };
+ACT.qfT = d => { QF.type = d.k; QF.typeLocked = true; QF.typeChosen = true; QF.manual = false; QF.produits = []; QF.pickOpen = false; QF.prodCat = null; suggestPlan(); const cats = TYPE_CATS[QF.type] || []; QF.produits = QF.produits.filter(x => cats.includes(byId('stock', x.itemId)?.cat)); if (!QF.planLabel) QF.label = INTER_TYPES[d.k]; renderQF(); };
+ACT.qfS = d => { QF.statut = d.v; if (d.v === 'planifiee' && QF.date <= TODAY) QF.date = addDays(TODAY, 1); if (d.v === 'realisee' && QF.date > TODAY) QF.date = TODAY; renderQF(); };
+ACT.qfDate = d => { QF.date = d.v; renderQF(); };
 ACT.qfM = d => { const a = QF.materiels; const i = a.indexOf(d.id); i >= 0 ? a.splice(i, 1) : a.push(d.id); renderQF(); };
-ACT.qfAdd = () => { QF.produits.push({ itemId: '', dose: '' }); QF.manual = true; renderQF(); };
-ACT.qfDel = d => { QF.produits.splice(+d.i, 1); renderQF(); };
-ACT.qfFav = d => { applyFav(d.id); QF.manual = true; renderQF(); };
+ACT.qfPC = d => { QF.prodCat = d.c; QF.newProd = false; renderQF(); };
+ACT.qfPickOpen = () => { QF.pickOpen = true; renderQF(); };
+ACT.qfAddP = d => { const it = byId('stock', d.id); const c = QF.parcelles.length ? curCult(byId('parcelles', QF.parcelles[0]))?.culture : null; const st = c && S.itk[c]?.steps.find(s => s.type === QF.type && s.produits.some(x => x.itemId === d.id)); const dose = st ? st.produits.find(x => x.itemId === d.id).dose : ''; QF.produits = QF.produits.filter(x => x.itemId); QF.produits.push({ itemId: d.id, dose }); QF.pickOpen = false; QF.manual = true; renderQF(); setTimeout(() => { const el = document.querySelector(`[data-in="qfDose"][data-i="${QF.produits.length - 1}"]`); if (el && dose === '') el.focus(); }, 50); };
+ACT.qfDel = d => { QF.produits.splice(+d.i, 1); QF.manual = true; renderQF(); };
+ACT.qfDose = d => { const x = QF.produits[+d.i]; const it = byId('stock', x.itemId); const step = DOSE_STEP[it?.unite] || 1; x.dose = Math.max(0, r2((parseFloat(String(x.dose).replace(',', '.')) || 0) + step * +d.d, 3)); QF.manual = true; renderQF(); };
+ACT.qfNewP = () => { QF.newProd = true; renderQF(); setTimeout(() => document.getElementById('qfNewNom')?.focus(), 50); };
+ACT.qfNewCancel = () => { QF.newProd = false; renderQF(); };
+ACT.qfNewU = d => { QF.newUnit = d.v; document.querySelectorAll('#qfNewU .fchip').forEach(x => x.classList.toggle('on', x.dataset.v === d.v)); };
+ACT.qfNewAdd = d => { const nom = document.getElementById('qfNewNom')?.value.trim(); if (!nom) { toast('Indiquez le nom du produit', 'warn'); return; } const it = { id: uid('st'), nom, cat: d.c, unite: QF.newUnit || ({ phyto: 'L', amendements: 't' }[d.c] || 'kg'), qte: 0, pmp: 0, basePrix: 0, batch: 1, seuil: 0, capacite: null, emplacement: '', fournisseur: '', lot: '', dateEntree: TODAY }; S.stock.push(it); QF.newProd = false; QF.newUnit = null; ACT.qfAddP({ id: it.id }); toast('Produit créé (stock à zéro : pensez à saisir une entrée)'); };
+ACT.qfFav = d => { applyFav(d.id); QF.manual = true; QF.typeChosen = true; renderQF(); };
 CH.qfProd = el => { QF.produits[+el.dataset.i].itemId = el.value; QF.manual = true; renderQF(); };
 CH.qfMo = el => { QF.mo = el.value; };
 CH.qfFavSave = el => { QF.saveFav = el.checked; };
 CH.qfPhoto = async el => { for (const f of [...el.files].slice(0, 6)) { QF.photos.push(await downscale(f)); } renderQF(); };
-IN.qf = el => { QF[el.dataset.k] = el.value; if (el.dataset.k === 'label') QF.autoLabel = false; };
-IN.qfDose = el => { QF.produits[+el.dataset.i].dose = el.value; QF.manual = true; };
-IN.qfH = el => { const s = qfSurface(); QF.hHa = s ? (+el.value || 0) / s : 0; };
+IN.qf = el => { QF[el.dataset.k] = el.value; if (el.dataset.k === 'label') QF.autoLabel = false; if (el.dataset.k === 'date') { document.querySelectorAll('#mf [data-a=qfDate]').forEach(b => b.classList.toggle('on', b.dataset.v === el.value)); } };
+IN.qfDose = el => { const x = QF.produits[+el.dataset.i]; x.dose = el.value; QF.manual = true; const it = byId('stock', x.itemId); const t = document.querySelector(`[data-tot="${el.dataset.i}"]`); if (t && it) t.textContent = qty(r2((parseFloat(String(el.value).replace(',', '.')) || 0) * qfSurface(), 2), it.unite); };
+IN.qfH = el => { const s = qfSurface(); QF.hHa = s ? (parseFloat(String(el.value).replace(',', '.')) || 0) / s : 0; };
 function downscale(file, max = 640) { return new Promise(res => { const r = new FileReader(); r.onload = () => { const img = new Image(); img.onload = () => { const k = Math.min(1, max / Math.max(img.width, img.height)); const c = document.createElement('canvas'); c.width = img.width * k; c.height = img.height * k; c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); res(c.toDataURL('image/jpeg', 0.72)); }; img.onerror = () => res(r.result); img.src = r.result; }; r.readAsDataURL(file); }); }
+/** Après réalisation : met à jour l'état de la parcelle (semis, variété) et recale les travaux prévus. */
+function afterApply(iv, extra = {}) {
+  const p = byId('parcelles', iv.parcelleId); const rec = p?.cultures[iv.campagne]; if (!rec) return;
+  if (iv.type === 'semis') { rec.semis = iv.date; rec.semisFait = iv.date; rec.recoltePrev = null; if (extra.variete) rec.variete = extra.variete; if (iv.campagne === CURRENT_CAMP) syncItkParcel(p); }
+}
 function submitQF() {
   if (!QF.parcelles.length) throw new Error('Choisissez au moins une parcelle');
-  const prods = QF.produits.filter(x => x.itemId && +x.dose > 0).map(x => ({ itemId: x.itemId, dose: +x.dose }));
+  const prods = QF.produits.filter(x => x.itemId && parseFloat(String(x.dose).replace(',', '.')) > 0).map(x => ({ itemId: x.itemId, dose: parseFloat(String(x.dose).replace(',', '.')) }));
+  if (TYPE_REQ.includes(QF.type) && !prods.length) { QF.open.prod = true; renderQF(); throw new Error(QF.produits.some(x => x.itemId) ? 'Indiquez la dose par hectare du produit' : `Choisissez le ${QF.type === 'semis' ? 'semence' : 'produit'} utilisé`); }
   const surfTot = qfSurface();
-  if (QF.type === 'recolte' && QF.statut === 'realisee' && !(+QF.recolte > 0)) throw new Error('Indiquez la quantité récoltée');
+  const recolte = parseFloat(String(QF.recolte || '').replace(',', '.'));
+  if (QF.type === 'recolte' && QF.statut === 'realisee' && !(recolte > 0)) throw new Error('Indiquez la quantité récoltée');
+  if (QF.statut === 'realisee' && QF.date > TODAY) throw new Error('Une opération réalisée ne peut pas être datée dans le futur');
   if (QF.edit) { const i = byId('interventions', QF.edit); Object.assign(i, { type: QF.type, label: QF.label || INTER_TYPES[QF.type], date: QF.date, produits: prods, materiels: [...QF.materiels], heures: r2(QF.hHa * i.surface, 1), mo: QF.mo, meteo: QF.meteo, obs: QF.obs, photos: QF.photos }); commit('Intervention modifiée'); return; }
   const warns = []; let total = 0;
   QF.parcelles.forEach(pid => {
     const p = byId('parcelles', pid);
     const camp = Object.keys(p.cultures).map(Number).filter(c => p.cultures[c].semis <= QF.date || c === campOf(QF.date)).sort((a, b) => b - a)[0] || campOf(QF.date);
     let iv = QF.planLabel ? S.interventions.filter(i => i.parcelleId === pid && i.statut === 'planifiee' && i.label === QF.planLabel && i.type === QF.type).sort((a, b) => Math.abs(daysBetween(a.date, QF.date)) - Math.abs(daysBetween(b.date, QF.date)))[0] || null : null;
-    if (iv) Object.assign(iv, { type: QF.type, label: QF.label || INTER_TYPES[QF.type], date: QF.date, produits: prods.map(x => ({ ...x })), materiels: [...QF.materiels], heures: r2(QF.hHa * p.surface, 1), mo: QF.mo, meteo: QF.meteo, obs: QF.obs, photos: QF.photos });
-    else { iv = { id: uid('iv'), campagne: camp, parcelleId: pid, date: QF.date, type: QF.type, label: QF.label || INTER_TYPES[QF.type], statut: 'planifiee', surface: p.surface, produits: prods.map(x => ({ ...x })), materiels: [...QF.materiels], heures: r2(QF.hHa * p.surface, 1), mo: QF.mo, meteo: QF.meteo, obs: QF.obs, photos: QF.photos }; S.interventions.push(iv); }
-    if (QF.type === 'recolte' && QF.statut === 'realisee') iv.recolteQte = r2(+QF.recolte * p.surface / surfTot, 2);
-    if (QF.statut === 'realisee') { warns.push(...applyIntervention(iv)); total += iv.coutIntrants; }
+    const data = { type: QF.type, label: QF.label || INTER_TYPES[QF.type], date: QF.date, produits: prods.map(x => ({ ...x })), materiels: [...QF.materiels], heures: r2(QF.hHa * p.surface, 1), mo: QF.mo, meteo: QF.meteo, obs: QF.obs, photos: QF.photos };
+    if (iv) Object.assign(iv, data);
+    else { iv = { id: uid('iv'), campagne: camp, parcelleId: pid, statut: 'planifiee', surface: p.surface, ...data }; S.interventions.push(iv); }
+    if (QF.type === 'recolte' && QF.statut === 'realisee') iv.recolteQte = r2(recolte * p.surface / surfTot, 2);
+    if (QF.statut === 'realisee') { warns.push(...applyIntervention(iv)); total += iv.coutIntrants; afterApply(iv, { variete: QF.variete }); }
+    else if (QF.type === 'semis' && QF.variete) { const rec = p.cultures[camp]; if (rec) rec.variete = QF.variete; }
   });
   if (QF.saveFav) S.favoris.push({ id: uid('f'), label: QF.label || INTER_TYPES[QF.type], type: QF.type, produits: prods, materiels: [...QF.materiels], hHa: r2(QF.hHa, 3) });
   S.interventions.sort((a, b) => a.date.localeCompare(b.date));
   const n = QF.parcelles.length;
-  commit(warns.length ? `Enregistrée avec alertes : ${warns.join(' · ')}` : QF.statut === 'realisee' ? `${n > 1 ? `Opération enregistrée sur ${n} parcelles` : 'Opération enregistrée'} · ${eur(total)} d'intrants déduits des stocks` : `${n > 1 ? n + ' interventions planifiées' : 'Intervention planifiée'}`, warns.length ? 'warn' : '');
+  commit(warns.length ? `Enregistrée avec alertes : ${warns.join(' · ')}` : QF.statut === 'realisee' ? `${n > 1 ? `Opération enregistrée sur ${n} parcelles` : 'Opération enregistrée'}${total ? ` · ${eur(total)} d'intrants déduits des stocks` : ''}` : `${n > 1 ? n + ' opérations planifiées' : 'Opération planifiée'} · visibles dans Tâches`, warns.length ? 'warn' : '');
 }
 
 /* =========================== STOCKS =========================== */
