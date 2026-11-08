@@ -287,6 +287,7 @@ function route() {
   const h = (location.hash || '').replace('#', '');
   UI.route = ROUTES.find(r => r[0] === h) || h === 'plus' ? h : 'dashboard';
   UI.notif = false; UI.mapEdit = null; UI.mapDraw = null;
+  if (UI.drawer) closeDrawer();
   render(); window.scrollTo(0, 0);
 }
 

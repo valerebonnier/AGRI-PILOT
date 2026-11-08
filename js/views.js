@@ -39,7 +39,7 @@ VIEWS.dashboard = () => {
   W.categories = () => `<div class="sec-h"><h3>Mes tâches</h3><span class="sp"></span><a href="#taches">Tout voir ${ic('chevR')}</a></div>
     <div class="cat-grid">${catCounts(todo60).map(c => `<button class="cat-tile" style="--c:${c.color}" data-a="goTasks" data-c="${c.k}"><span class="ti">${ic(c.icon)}</span><span class="n">${c.n}</span><b>${c.label}</b><span class="u ${c.u || c.w ? '' : 'none'}">${c.u ? `${c.u} en retard` : c.w ? `${c.w} cette semaine` : c.n ? 'à planifier' : 'à jour'}</span></button>`).join('')}</div>`;
   W.priorites = () => `<div class="sec-h"><h3>À faire en priorité</h3><span class="sp"></span><a href="#taches">${todo.length} tâche${todo.length > 1 ? 's' : ''} ${ic('chevR')}</a></div>
-    ${todo.filter(t => t.urgence !== 'ok').slice(0, 4).map(t => taskCard(t)).join('') || `<div class="card pad row">${ic('check')}<span class="muted">Rien d’urgent — tout est à jour.</span></div>`}`;
+    ${taskItems(todo.filter(t => t.urgence !== 'ok')).slice(0, 4).map(tkCard).join('') || `<div class="card pad row">${ic('check')}<span class="muted">Rien d’urgent — tout est à jour.</span></div>`}`;
   W.cultures = () => { const ass = assolement(CURRENT_CAMP); if (!ass.length) return ''; return `<div class="sec-h"><h3>Mes cultures</h3><span class="muted small">${campLabel(CURRENT_CAMP)}</span><span class="sp"></span><a href="#parcellaire">Carte ${ic('chevR')}</a></div>
     <div class="hscroll">${ass.map(a => { const pids = S.parcelles.filter(p => p.cultures[CURRENT_CAMP]?.culture === a.key).map(p => p.id); const ivs = ivCur.filter(i => pids.includes(i.parcelleId)); const d = ivs.filter(i => i.statut === 'realisee').length; const nx = ivs.filter(i => i.statut === 'planifiee').sort((x, y) => x.date.localeCompare(y.date))[0]; return `<div class="crop" style="--c:${a.color}" data-a="goCult" data-c="${a.key}"><div class="row"><span class="sw"></span><b>${esc(a.label)}</b></div><div class="v">${nf(a.value, 1)} ha</div><div class="s">${pids.length} parcelle${pids.length > 1 ? 's' : ''}</div>${ivs.length ? `<div class="bar" style="margin:10px 0 6px"><i style="width:${d / ivs.length * 100}%;background:var(--c)"></i></div><div class="s">${d}/${ivs.length} travaux réalisés</div>` : '<div class="s" style="margin-top:10px">Aucun travail planifié</div>'}${nx ? `<div class="nx">${ic(IV_ICON[nx.type] || 'sprout')}<span>${esc(nx.label)} · ${dshort(nx.date)}</span></div>` : ''}</div>`; }).join('')}</div>`; };
   W.actions = () => `<div class="sec-h"><h3>Saisie rapide</h3></div><div class="qa-grid q4">${QUICK_ACTIONS.map(q => `<button class="qa" style="--c:${q.c}" data-a="qa" data-k="${q.k}"><span class="ti">${ic(q.i)}</span>${q.l}</button>`).join('')}</div>`;
@@ -107,16 +107,47 @@ function pickMat(t) { openModal({ title: t === 'reparation' ? 'Panne — quel ma
 ACT.pickMatGo = d => { closeModal(); setTimeout(() => ACT.addMaint({ id: d.id, t: d.t }), 220); };
 
 /* =========================== TÂCHES =========================== */
+/** Regroupe les opérations identiques (même libellé, même type, même date) sur plusieurs parcelles. */
+function taskItems(list) {
+  const out = [], groups = {};
+  list.forEach(t => {
+    if (t.kind !== 'intervention') { out.push(t); return; }
+    const iv = byId('interventions', t.id); if (!iv) return;
+    const k = `${iv.label}|${iv.type}|${iv.date}`;
+    if (!groups[k]) { groups[k] = { ...t, kind: 'ivgroup', ivs: [], titre: iv.label }; out.push(groups[k]); }
+    groups[k].ivs.push(iv);
+  });
+  return out;
+}
+function tkCard(t) {
+  const c = TASK_CATS[t.cat];
+  let meta = `<span class="tk-meta">${esc(t.detail || '')}</span>`, acts;
+  if (t.kind === 'ivgroup') {
+    const ivs = t.ivs, surf = sum(ivs, i => i.surface), cults = [...new Set(ivs.map(i => CULTURES[byId('parcelles', i.parcelleId)?.cultures[i.campagne]?.culture]?.nom).filter(Boolean))];
+    const prods = ivs[0].produits.map(x => { const it = byId('stock', x.itemId); return it ? `${esc(it.nom)} ${nfx(x.dose, 2)} ${it.unite}/ha` : ''; }).filter(Boolean).join(' · ');
+    meta = `<span class="tk-meta"><b>${ivs.length > 1 ? `${ivs.length} parcelles` : esc(parcName(ivs[0].parcelleId))}</b> · ${nf(surf, 1)} ha${cults.length ? ' · ' + esc(cults.join(', ')) : ''}</span>${prods ? `<span class="tk-meta">${prods}</span>` : ''}${ivs.length > 1 ? `<span class="tk-parcs">${ivs.map(i => `<i>${esc(parcName(i.parcelleId))}</i>`).join('')}</span>` : ''}`;
+    acts = `<button class="btn sm" data-a="${ivs.length > 1 ? 'tkDetail' : 'openIv'}" data-id="${ivs.length > 1 ? ivs.map(i => i.id).join(',') : ivs[0].id}">${ivs.length > 1 ? 'Détail' : 'Voir'}</button><button class="btn sm tk-go" data-a="quickIv" data-pids="${ivs.map(i => i.parcelleId).join(',')}" data-plan="${esc(ivs[0].label)}" data-type="${ivs[0].type}">${ic('check')} ${ivs.length > 1 ? `Fait sur les ${ivs.length}` : 'Fait'}</button>`;
+  } else acts = `<button class="btn sm" data-a="openTodo" data-kind="${t.kind}" data-id="${t.id}">Voir</button>${t.action ? `<button class="btn sm tk-go" data-a="taskAct" data-kind="${t.kind}" data-id="${t.id}">${t.action}</button>` : ''}`;
+  return `<div class="tk" style="--c:${c.color}"><div class="tk-top"><span class="tk-ic">${ic(t.icon || c.icon)}</span><div class="tk-main"><span class="tk-cat">${c.label}${t.sub ? ` · ${esc(t.sub)}` : ''}</span><b>${esc(t.titre)}</b>${meta}</div><span class="due ${t.urgence === 'ok' ? '' : t.urgence}">${esc(t.echeance)}</span></div><div class="tk-act">${acts}</div></div>`;
+}
+ACT.tkDetail = d => { const ivs = d.id.split(',').map(id => byId('interventions', id)).filter(Boolean); openModal({ title: esc(ivs[0].label), body: `<p class="small muted">${dfr(ivs[0].date)} · ${ivs.length} parcelles · ${nf(sum(ivs, i => i.surface), 1)} ha</p><div class="card">${ivs.map(i => `<div class="mrow" style="--c:var(--c-cult)"><div class="ic">${ic(IV_ICON[i.type])}</div><div class="tx" data-a="openIvFromModal" data-id="${i.id}"><b>${esc(parcName(i.parcelleId))}</b><span>${nf(i.surface, 2)} ha</span></div><button class="act-s" data-a="validateIv" data-id="${i.id}">Fait</button></div>`).join('')}</div>`, foot: `<button type="button" class="btn" data-a="closeModal">Fermer</button><button type="button" class="btn p" data-a="quickIv" data-pids="${ivs.map(i => i.parcelleId).join(',')}" data-plan="${esc(ivs[0].label)}" data-type="${ivs[0].type}">${ic('check')} Fait sur les ${ivs.length}</button>` }); };
+ACT.openIvFromModal = d => { closeModal(); openDrawer('intervention', d.id); };
 VIEWS.taches = () => {
-  const all = todoList(60); const cat = UI.f.taskCat || '';
-  const list = all.filter(t => !cat || t.cat === cat);
-  const G = [['retard', 'En retard', 'late'], ['jour', "Aujourd'hui", ''], ['semaine', '7 prochains jours', ''], ['plus_tard', 'Plus tard (60 j)', '']];
+  const all = todoList(60); const cat = UI.f.taskCat || '', when = UI.f.taskWhen || '';
+  const items = taskItems(all.filter(t => !cat || t.cat === cat));
+  const inWhen = t => !when || (when === 'semaine' ? ['jour', 'semaine'].includes(t.groupe) : t.groupe === when);
+  const cnt = g => taskItems(all.filter(t => (!cat || t.cat === cat))).filter(t => g === 'semaine' ? ['jour', 'semaine'].includes(t.groupe) : t.groupe === g).length;
+  const list = items.filter(inWhen);
+  const G = [['retard', 'En retard', 'alert'], ['jour', "Aujourd'hui", 'calendar'], ['semaine', 'Cette semaine', 'calendar'], ['plus_tard', 'À venir', 'clock']];
   return `${demoBar('Tâches calculées à partir des données de démonstration.')}
-  <div class="fchips"><button class="fchip ${!cat ? 'on' : ''}" style="--c:var(--text)" data-a="taskCat" data-c="">Toutes <span class="k">${all.length}</span></button>${catCounts(all).map(c => `<button class="fchip ${cat === c.k ? 'on' : ''}" style="--c:${c.color}" data-a="taskCat" data-c="${c.k}"><span class="cat-dot" style="--c:${c.color}"></span>${c.label} <span class="k">${c.n}</span></button>`).join('')}</div>
-  ${cat ? `<div class="note mt" style="border-left:4px solid ${TASK_CATS[cat].color}">${ic(TASK_CATS[cat].icon)}<span>${{ cultures: 'Interventions planifiées sur vos parcelles (issues des itinéraires techniques). « Valider » les marque comme réalisées et déduit les intrants.', materiel: 'Entretiens et contrôles à venir, selon les heures compteur ou la date.', stocks: 'Intrants sous le seuil d’alerte. « Commander » ouvre une entrée de stock.', ventes: 'Factures non réglées (échéance indicative à 30 jours).', admin: 'Échéances PAC et réglementaires. Les dates de démonstration sont indicatives.', documents: 'Documents marqués « à compléter ».' }[cat]}</span></div>` : ''}
-  ${G.map(([g, l, cls]) => { const ts = list.filter(t => t.groupe === g); return ts.length ? `<div class="group-h ${cls}">${g === 'retard' ? ic('alert') : ''}${l}<span class="n">${ts.length}</span></div>${ts.map(t => taskCard(t)).join('')}` : ''; }).join('') || '<div class="card empty mt">Aucune tâche dans cette catégorie</div>'}
-  <div class="formula mt2">Couleur = catégorie · pastille = urgence (rouge : en retard, contour rouge : cette semaine).</div>`;
+  <div class="tk-sum">${[['retard', 'En retard', 'late'], ['semaine', 'Cette semaine', 'soon'], ['plus_tard', 'À venir', 'later']].map(([g, l, cls]) => `<button class="${cls} ${when === g ? 'on' : ''}" data-a="taskWhen" data-g="${g}"><b>${cnt(g)}</b><span>${l}</span></button>`).join('')}</div>
+  <div class="fchips mt"><button class="fchip ${!cat ? 'on' : ''}" style="--c:var(--text)" data-a="taskCat" data-c="">Tout</button>${catCounts(all).filter(c => c.n).map(c => `<button class="fchip ${cat === c.k ? 'on' : ''}" style="--c:${c.color}" data-a="taskCat" data-c="${c.k}">${ic(c.icon)} ${c.label} <span class="k">${c.n}</span></button>`).join('')}</div>
+  ${when || cat ? `<div class="row mt small"><span class="muted">Filtre actif</span><button class="lnk b" style="background:none;border:0;color:var(--primary);cursor:pointer" data-a="taskReset">Tout afficher</button></div>` : ''}
+  ${G.map(([g, l, i]) => { const ts = list.filter(t => t.groupe === g); return ts.length ? `<div class="group-h ${g === 'retard' ? 'late' : ''}">${ic(i)} ${l}<span class="n">${ts.length}</span></div>${ts.map(tkCard).join('')}` : ''; }).join('') || `<div class="card pad mt row">${ic('check')}<span class="muted">Aucune tâche ${when ? 'dans cette période' : ''} ${cat ? 'pour cette catégorie' : ''}.</span></div>`}
+  <div class="formula mt2">Les opérations identiques prévues le même jour sur plusieurs parcelles sont regroupées : « Fait sur les N » les valide toutes en une saisie.</div>`;
 };
+ACT.taskWhen = d => { UI.f.taskWhen = UI.f.taskWhen === d.g ? '' : d.g; render(); };
+ACT.taskReset = () => { UI.f.taskWhen = ''; UI.f.taskCat = ''; render(); };
 ACT.taskCat = d => { UI.f.taskCat = d.c; render(); };
 
 /* =========================== MENU « PLUS » =========================== */
@@ -225,7 +256,7 @@ VIEWS.parcellaire = () => {
       </tbody><tfoot><tr><td>Total</td><td></td><td class="n">${nf(sum(list, p => p.surface), 2)} ha</td><td colspan="6"></td></tr></tfoot></table></div></div>`}`;
 };
 const statutParc = p => { const c = curCult(p); if (!c) return '<span class="badge">Non assolée</span>'; if (c.rdtReel) return '<span class="badge">Récoltée</span>'; if (c.semis > TODAY) return '<span class="badge warn">À semer</span>'; return '<span class="badge ok">En culture</span>'; };
-const parcLi = p => { const c = curCult(p); if (p.contourProvisoire) return `<div class="li"><div class="ic warn">${ic('pin')}</div><div class="tx" data-a="openParc" data-id="${p.id}"><b>${esc(p.nom)}</b><span>${nf(p.surface, 2)} ha · contour à dessiner</span></div><button class="btn sm" data-a="editContour" data-id="${p.id}">${ic('pin')} Dessiner</button></div>`; return `<div class="li" data-a="openParc" data-id="${p.id}"><div class="ic" style="background:color-mix(in srgb,${CULTURES[c?.culture]?.color || '#999'} 22%,transparent);color:${CULTURES[c?.culture]?.color}">${ic('wheat')}</div><div class="tx"><b>${esc(p.nom)}</b><span>${nf(p.surface, 2)} ha · ${esc(CULTURES[c?.culture]?.nom || 'Non assolée')}</span></div>${statutParc(p)}</div>`; };
+const parcLi = p => { const c = curCult(p); if (p.contourProvisoire) return `<div class="li"><div class="ic warn">${ic('pin')}</div><div class="tx" data-a="openParc" data-id="${p.id}"><b>${esc(p.nom)}</b><span>${nf(p.surface, 2)} ha · contour à dessiner</span></div><button class="btn sm" data-a="editContour" data-id="${p.id}">${ic('pin')} Dessiner</button></div>`; return `<div class="li" data-a="openParc" data-id="${p.id}"><div class="ic" style="background:color-mix(in srgb,${CULTURES[c?.culture]?.color || '#999'} 22%,transparent);color:${CULTURES[c?.culture]?.color}">${ic('wheat')}</div><div class="tx"><b>${esc(p.nom)}</b><span>${nf(p.surface, 2)} ha · ${esc(CULTURES[c?.culture]?.nom || 'Non assolée')}</span></div>${statutParc(p)}<button class="btn sm icon" style="margin-left:4px" data-a="quickIv" data-pid="${p.id}" aria-label="Saisir une opération">${ic('plus')}</button></div>`; };
 IN.parcQ = el => { UI.q.parc = el.value; const pos = el.selectionStart; render(); const i = document.querySelector('[data-in=parcQ]'); i.focus(); i.setSelectionRange(pos, pos); };
 ACT.parcCult = d => { UI.f.parcCult = d.c || null; render(); };
 ACT.openParc = d => openDrawer('parcelle', d.id);
@@ -328,16 +359,29 @@ ACT.importParc = () => openModal({
   })
 });
 
+const OP_TYPES = [['protection', 'Traitement'], ['desherbage', 'Désherbage'], ['fertilisation', 'Engrais'], ['semis', 'Semis'], ['travail_sol', 'Travail du sol'], ['irrigation', 'Irrigation'], ['recolte', 'Récolte'], ['autre', 'Autre']];
 DRAWERS.parcelle = id => {
   const p = byId('parcelles', id); if (!p) return null;
-  const t = UI.drawer.tab || 'fiche', c = curCult(p);
+  const t = UI.drawer.tab || 'ops', c = curCult(p);
   const camps = Object.keys(p.cultures).map(Number).sort((a, b) => b - a);
-  let body = tabsBar('dp', [['fiche', 'Fiche'], ['historique', 'Historique'], ['interventions', 'Interventions'], ['eco', 'Économie']], t, true);
-  if (t === 'fiche') {
-    body += `<div class="card pad"><div class="kv">${[['Surface', `${nf(p.surface, 2)} ha`], ['Surface graphique', `${nf(areaHa(p.coords), 2)} ha`], ['Commune', p.commune], ['Réf. cadastrale', p.cadastre || '—'], ['Type de sol', p.sol], ['Statut foncier', { propriete: 'Propriété', fermage: 'Fermage', autre: 'Autre' }[p.statutFoncier]], ['Îlot / n° PAC', `${p.ilot} / ${p.numPac || '—'}`], ['GPS (centre)', p.centre ? `${p.centre[0]}, ${p.centre[1]}` : '—']].map(([k, v]) => `<div><span>${k}</span><b>${esc(v)}</b></div>`).join('')}</div></div>
+  let body = tabsBar('dp', [['ops', 'Opérations'], ['fiche', 'Fiche'], ['interventions', 'Travaux'], ['historique', 'Historique'], ['eco', 'Économie']], t, true);
+  if (t === 'ops') {
+    const col = CULTURES[c?.culture]?.color || 'var(--primary)';
+    const same = c ? S.parcelles.filter(x => curCult(x)?.culture === c.culture) : [];
+    const next = S.interventions.filter(i => i.parcelleId === p.id && i.statut === 'planifiee').sort((a, b) => a.date.localeCompare(b.date)).slice(0, 4);
+    const last = S.interventions.filter(i => i.parcelleId === p.id && i.statut === 'realisee').sort((a, b) => b.date.localeCompare(a.date)).slice(0, 4);
+    body += `<div class="pcard" style="--c:${col}"><div class="row"><span class="sw"></span><div style="flex:1;min-width:0"><b>${esc(CULTURES[c?.culture]?.nom || 'Non assolée')}${c?.variete ? ` · ${esc(c.variete)}` : ''}</b><span>${nf(p.surface, 2)} ha · ${esc(p.commune || 'commune ?')}${c?.semis ? ` · semis ${dshort(c.semis)}` : ''}</span></div>${statutParc(p)}</div></div>
+    <div class="sec-h" style="margin-top:16px"><h3>Saisir une opération</h3></div>
+    <div class="op-grid">${OP_TYPES.map(([k, l]) => `<button class="op" data-a="quickIv" data-pid="${p.id}" data-type="${k}"><span class="ti">${ic(IV_ICON[k])}</span>${l}</button>`).join('')}</div>
+    ${same.length > 1 ? `<button class="btn mt" style="width:100%;justify-content:flex-start" data-a="quickIv" data-pids="${same.map(x => x.id).join(',')}">${ic('layers')} Même opération sur tout le ${esc(CULTURES[c.culture].nom.toLowerCase())} · ${same.length} parcelles · ${nf(sum(same, x => x.surface), 1)} ha</button>` : ''}
+    <div class="sec-h"><h3>Prévu</h3><span class="sp"></span>${next.length ? `<button class="lnk" data-a="tab" data-k="dp" data-v="interventions" data-drawer="1">Tout ${ic('chevR')}</button>` : ''}</div>
+    <div class="card">${next.map(i => { const d = dueInfo(i.date); return `<div class="mrow" style="--c:var(--c-cult)"><div class="ic" data-a="openIv" data-id="${i.id}">${ic(IV_ICON[i.type] || 'sprout')}</div><div class="tx" data-a="openIv" data-id="${i.id}"><b>${esc(i.label)}</b><span>${dfr(i.date)}${i.produits.length ? ' · ' + i.produits.map(x => esc(byId('stock', x.itemId)?.nom || '')).join(', ') : ''}</span></div><div class="r" style="display:flex;flex-direction:column;align-items:flex-end;gap:6px"><span class="due ${d.urgence === 'ok' ? '' : d.urgence}">${esc(d.echeance)}</span><button class="act-s" data-a="validateIv" data-id="${i.id}">Fait</button></div></div>`; }).join('') || `<div class="empty small">Aucune opération prévue.${c ? ` <button class="lnk" data-a="genItk" data-id="${p.id}">Générer depuis l’itinéraire type</button>` : ''}</div>`}</div>
+    ${last.length ? `<div class="sec-h"><h3>Dernières opérations</h3></div><div class="card">${last.map(i => `<div class="mrow" style="--c:var(--c-cult)" data-a="openIv" data-id="${i.id}"><div class="ic">${ic(IV_ICON[i.type] || 'sprout')}</div><div class="tx"><b>${esc(i.label)}</b><span>${dfr(i.date)}</span></div><div class="r"><b>${eur(i.coutIntrants)}</b><span>${eur(i.coutIntrants / i.surface)}/ha</span></div></div>`).join('')}</div>` : ''}`;
+  } else if (t === 'fiche') {
+    body += `<div class="card pad"><div class="kv">${[['Surface', `${nf(p.surface, 2)} ha`], ['Surface graphique', p.contourProvisoire ? 'contour à dessiner' : `${nf(areaHa(p.coords), 2)} ha`], ['Commune', p.commune || '—'], ['Réf. cadastrale', p.cadastre || '—'], ['Type de sol', p.sol || '—'], ['Statut foncier', { propriete: 'Propriété', fermage: 'Fermage', autre: 'Autre' }[p.statutFoncier] || '—'], ['Îlot / n° PAC', `${p.ilot} / ${p.numPac || '—'}`], ['GPS (centre)', p.centre && !p.contourProvisoire ? `${p.centre[0]}, ${p.centre[1]}` : '—']].map(([k, v]) => `<div><span>${k}</span><b>${esc(v)}</b></div>`).join('')}</div></div>
     <div class="card pad mt"><div class="row mb"><b>Culture ${campLabel(CURRENT_CAMP)}</b><span class="sp"></span>${statutParc(p)}</div>${c ? `<div class="kv">${[['Culture', CULTURES[c.culture]?.nom], ['Variété', c.variete || '—'], ['Semis', dfr(c.semis)], ['Récolte prévue', dfr(c.recoltePrev)], ['Rendement prévisionnel', c.rdtPrev ? `${nfx(c.rdtPrev, 1)} t/ha` : '—'], ['Rendement réel', c.rdtReel ? `${nfx(c.rdtReel, 2)} t/ha` : '—'], ['Production prévue', c.rdtPrev ? `${nf(c.rdtPrev * p.surface, 1)} t` : '—']].map(([k, v]) => `<div><span>${k}</span><b>${esc(v)}</b></div>`).join('')}</div>` : '<div class="muted">Aucune culture déclarée pour la campagne en cours.</div>'}</div>
     ${p.contourProvisoire ? `<div class="note warn mt">${ic('map')}<span>Contour provisoire, non placé sur la carte. Touchez « Dessiner le contour » puis placez les sommets sur la vue satellite.</span></div>` : ''}
-    <div class="row wrap mt"><button class="btn p" data-a="quickIv" data-pid="${p.id}">${ic('plus')} Intervention</button><button class="btn" data-a="editParc" data-id="${p.id}">${ic('edit')} Modifier</button><button class="btn" data-a="editContour" data-id="${p.id}">${ic('map')} ${p.contourProvisoire ? 'Dessiner le contour' : 'Modifier le contour'}</button>${c ? `<button class="btn" data-a="genItk" data-id="${p.id}">${ic('sprout')} Générer l'ITK</button>` : ''}<span class="sp"></span><button class="btn d g" data-a="delParc" data-id="${p.id}">${ic('trash')}</button></div>`;
+    <div class="row wrap mt"><button class="btn" data-a="editParc" data-id="${p.id}">${ic('edit')} Modifier</button><button class="btn" data-a="editContour" data-id="${p.id}">${ic('map')} ${p.contourProvisoire ? 'Dessiner le contour' : 'Modifier le contour'}</button>${c ? `<button class="btn" data-a="genItk" data-id="${p.id}">${ic('sprout')} Générer l'ITK</button>` : ''}<span class="sp"></span><button class="btn d g" data-a="delParc" data-id="${p.id}">${ic('trash')}</button></div>`;
   } else if (t === 'historique') {
     body += `<div class="card"><div class="tbl-wrap"><table class="t"><thead><tr><th>Campagne</th><th>Culture</th><th>Variété</th><th class="n">Rdt prév.</th><th class="n">Rdt réel</th><th class="n">Production</th></tr></thead><tbody>${camps.map(cp => { const r = p.cultures[cp]; return `<tr><td class="b">${campLabel(cp)}</td><td>${cultBadge(r.culture)}</td><td>${esc(r.variete || '—')}</td><td class="n">${r.rdtPrev ? nfx(r.rdtPrev, 1) : '—'}</td><td class="n">${r.rdtReel ? nfx(r.rdtReel, 2) : '—'}</td><td class="n">${r.rdtReel && r.culture !== 'prairie' ? nf(r.rdtReel * p.surface, 1) + ' t' : '—'}</td></tr>`; }).join('')}</tbody></table></div></div>
     <div class="formula">Rendements en t/ha. Les campagnes antérieures à 2025 sont un historique saisi (démo), sans détail d'interventions.</div>`;
@@ -521,18 +565,39 @@ ACT.favFromIv = d => { const i = byId('interventions', d.id); S.favoris.push({ i
 
 /* ---- Saisie rapide d'intervention (objectif < 30 s) ---- */
 let QF = null;
-ACT.quickIv = d => quickIvForm({ pid: d.pid, fav: d.fav });
-function quickIvForm({ pid, fav, edit } = {}) {
+ACT.quickIv = d => quickIvForm({ pid: d.pid, fav: d.fav, type: d.type, pids: d.pids ? d.pids.split(',') : null, planLabel: d.plan });
+/**
+ * Saisie d'opération. Peut cibler une ou plusieurs parcelles (ex. toutes les parcelles d'une culture).
+ * Si une opération identique est prévue dans l'itinéraire de ces parcelles (même libellé), elle est
+ * marquée réalisée au lieu de créer un doublon.
+ */
+function quickIvForm({ pid, pids, fav, edit, type, planLabel } = {}) {
   if (edit) { const i = byId('interventions', edit); QF = { edit, parcelles: [i.parcelleId], type: i.type, label: i.label, date: i.date, statut: 'planifiee', produits: i.produits.map(x => ({ ...x })), materiels: [...i.materiels], hHa: i.heures / i.surface, mo: i.mo, meteo: i.meteo, obs: i.obs, photos: i.photos || [], recolte: '' }; }
-  else QF = { parcelles: pid ? [pid] : [], type: 'protection', label: '', date: TODAY, statut: 'realisee', produits: [], materiels: [], hHa: 0.1, mo: S.exploitation.mainOeuvre[0]?.nom || '', meteo: '', obs: '', photos: [], recolte: '', saveFav: false, autoLabel: true };
-  if (fav) applyFav(fav); else if (pid && !edit) suggestFromItk();
-  openModal({ title: edit ? 'Modifier l’intervention' : 'Nouvelle intervention', wide: true, body: '', submit: edit ? 'Enregistrer' : 'Enregistrer l’intervention', onSubmit: submitQF, onMount: () => renderQF() });
+  else QF = { parcelles: pids ? [...pids] : pid ? [pid] : [], type: type || 'protection', typeLocked: !!type, label: '', date: TODAY, statut: 'realisee', produits: [], materiels: [], hHa: 0.1, mo: S.exploitation.mainOeuvre[0]?.nom || '', meteo: '', obs: '', photos: [], recolte: '', saveFav: false, autoLabel: true, planLabel: null, manual: false };
+  if (fav) { applyFav(fav); QF.manual = true; }
+  else if (!edit && QF.parcelles.length) suggestPlan(planLabel);
+  const n = QF.parcelles.length;
+  openModal({ title: edit ? 'Modifier l’intervention' : n > 1 ? `Opération sur ${n} parcelles` : 'Nouvelle opération', wide: true, body: '', submit: edit ? 'Enregistrer' : 'Enregistrer', onSubmit: submitQF, onMount: () => renderQF() });
 }
-function applyFav(fid) { const f = S.favoris.find(x => x.id === fid); if (!f) return; Object.assign(QF, { type: f.type, label: f.label, produits: f.produits.map(x => ({ ...x })), materiels: [...f.materiels], hHa: f.hHa, autoLabel: false }); }
-function suggestFromItk() {
-  const pid = QF.parcelles[0]; if (!pid) return;
-  const next = S.interventions.filter(i => i.parcelleId === pid && i.statut === 'planifiee' && i.campagne === CURRENT_CAMP).sort((a, b) => a.date.localeCompare(b.date))[0];
-  if (next) { Object.assign(QF, { type: next.type, label: next.label, produits: next.produits.map(x => ({ itemId: x.itemId, dose: x.dose })), materiels: [...next.materiels], hHa: next.heures / next.surface, fromPlan: next.id, autoLabel: false }); }
+function applyFav(fid) { const f = S.favoris.find(x => x.id === fid); if (!f) return; Object.assign(QF, { type: f.type, label: f.label, produits: f.produits.map(x => ({ ...x })), materiels: [...f.materiels], hHa: f.hHa, autoLabel: false, planLabel: null }); }
+/** Planifiées correspondant à un libellé sur les parcelles choisies. */
+function qfPlanned(label, type) { return S.interventions.filter(i => i.statut === 'planifiee' && QF.parcelles.includes(i.parcelleId) && i.label === label && (!type || i.type === type)); }
+/** Préremplit avec la prochaine opération prévue (commune au plus grand nombre de parcelles sélectionnées). */
+function suggestPlan(forceLabel) {
+  const pool = S.interventions.filter(i => i.statut === 'planifiee' && QF.parcelles.includes(i.parcelleId) && (!QF.typeLocked || i.type === QF.type) && (!forceLabel || i.label === forceLabel));
+  if (!pool.length) {
+    QF.planLabel = null;
+    if (QF.typeLocked && QF.parcelles.length) { // gabarit d'ITK de la culture pour ce type
+      const c = curCult(byId('parcelles', QF.parcelles[0]))?.culture; const st = S.itk[c]?.steps.find(x => x.type === QF.type);
+      QF.label = st ? st.label : INTER_TYPES[QF.type];
+      if (st) Object.assign(QF, { produits: st.produits.filter(x => byId('stock', x.itemId)).map(x => ({ ...x })), materiels: st.materiels.filter(m => byId('materiel', m)), hHa: st.hHa });
+    }
+    return;
+  }
+  const groups = {}; pool.forEach(i => { (groups[i.label] = groups[i.label] || []).push(i); });
+  const best = Object.values(groups).sort((a, b) => new Set(b.map(i => i.parcelleId)).size - new Set(a.map(i => i.parcelleId)).size || a[0].date.localeCompare(b[0].date))[0].sort((a, b) => a.date.localeCompare(b.date));
+  const ref = best[0];
+  Object.assign(QF, { type: ref.type, label: ref.label, produits: ref.produits.map(x => ({ itemId: x.itemId, dose: x.dose })), materiels: [...ref.materiels], hHa: ref.heures / ref.surface, autoLabel: false, planLabel: ref.label });
 }
 function qfSurface() { return r2(sum(QF.parcelles, id => byId('parcelles', id)?.surface || 0), 2); }
 function renderQF() {
@@ -541,11 +606,12 @@ function renderQF() {
   const intr = S.stock.filter(x => x.cat !== 'production' && x.cat !== 'carburants');
   const cost = sum(QF.produits, x => { const it = byId('stock', x.itemId); return it ? x.dose * surf * it.pmp : 0; });
   const warn = QF.statut === 'realisee' ? QF.produits.map(x => { const it = byId('stock', x.itemId); const q = x.dose * surf; return it && it.qte < q ? `${esc(it.nom)} : ${nfx(it.qte, 1)} ${it.unite} disponibles pour ${nfx(q, 1)}` : null; }).filter(Boolean) : [];
-  const plan = QF.fromPlan ? byId('interventions', QF.fromPlan) : null;
   f.innerHTML = `
   ${S.favoris.length && !QF.edit ? `<div class="field"><span>${ic('star')} Favoris — un geste pour tout préremplir</span><div class="fchips">${S.favoris.map(x => `<span class="fchip" style="--c:var(--c-cult)" data-a="qfFav" data-id="${x.id}">${ic(IV_ICON[x.type] || 'star')} ${esc(x.label)}</span>`).join('')}</div></div>` : ''}
-  <div class="field"><span>Parcelle(s) * ${surf ? `<span class="muted">— ${QF.parcelles.length} sélectionnée(s) · ${nf(surf, 2)} ha</span>` : ''}</span><div class="pick-grid">${S.parcelles.map(p => { const c = curCult(p); return `<div class="pick ${QF.parcelles.includes(p.id) ? 'on' : ''}" style="--c:${CULTURES[c?.culture]?.color || '#999'}" data-a="qfP" data-id="${p.id}"><i class="sw"></i><span>${esc(p.nom)}<small>${nf(p.surface, 1)} ha · ${esc(CULTURES[c?.culture]?.nom || '—')}</small></span><span class="ck">${QF.parcelles.includes(p.id) ? ic('check') : ''}</span></div>`; }).join('')}</div></div>
-  ${plan ? `<div class="note info">${ic('sprout')}<span>Prérempli depuis l’ITK : <b>${esc(plan.label)}</b> prévue le ${dfr(plan.date)}. ${QF.statut === 'realisee' ? 'Elle sera marquée comme réalisée.' : ''}</span></div>` : ''}
+  <div class="field"><span>Parcelle(s) * ${surf ? `<span class="muted">— ${QF.parcelles.length} sélectionnée(s) · ${nf(surf, 2)} ha</span>` : ''}</span>
+  ${!QF.edit ? `<div class="fchips" style="margin-bottom:8px"><span class="fchip ${QF.parcelles.length === S.parcelles.length ? 'on' : ''}" style="--c:var(--text)" data-a="qfCult" data-c="*">Toutes · ${S.parcelles.length}</span>${assolement(CURRENT_CAMP).map(a => { const ids = S.parcelles.filter(p => curCult(p)?.culture === a.key).map(p => p.id); const on = ids.every(id => QF.parcelles.includes(id)); return `<span class="fchip ${on ? 'on' : ''}" style="--c:${a.color}" data-a="qfCult" data-c="${a.key}"><span class="cat-dot" style="--c:${a.color}"></span>Tout ${esc(a.label.toLowerCase())} · ${ids.length} parc. · ${nf(a.value, 1)} ha</span>`; }).join('')}</div>` : ''}
+  <div class="pick-grid">${[...S.parcelles].sort((a, b) => (curCult(a)?.culture || '').localeCompare(curCult(b)?.culture || '')).map(p => { const c = curCult(p); return `<div class="pick ${QF.parcelles.includes(p.id) ? 'on' : ''}" style="--c:${CULTURES[c?.culture]?.color || '#999'}" data-a="qfP" data-id="${p.id}"><i class="sw"></i><span>${esc(p.nom)}<small>${nf(p.surface, 1)} ha · ${esc(CULTURES[c?.culture]?.nom || '—')}</small></span><span class="ck">${QF.parcelles.includes(p.id) ? ic('check') : ''}</span></div>`; }).join('')}</div></div>
+  ${QF.planLabel && !QF.edit ? (() => { const pl = qfPlanned(QF.planLabel, QF.type); const np = new Set(pl.map(i => i.parcelleId)).size; return `<div class="note info">${ic('sprout')}<span>Prévu dans l’itinéraire : <b>${esc(QF.planLabel)}</b> (${dfr(pl[0]?.date)}) sur ${np} des ${QF.parcelles.length} parcelle(s). ${QF.statut === 'realisee' ? `Ces ${np} travaux seront marqués réalisés${np < QF.parcelles.length ? ', les autres parcelles reçoivent une nouvelle intervention' : ''}.` : 'Ils seront mis à jour.'}</span></div>`; })() : ''}
   <div class="field"><span>Type d’intervention</span><div class="type-grid">${Object.entries(INTER_TYPES).map(([k, l]) => `<div class="pick ${QF.type === k ? 'on' : ''}" data-a="qfT" data-k="${k}">${ic(IV_ICON[k])}${l.replace(' / plantation', '').replace(' des cultures', '')}</div>`).join('')}</div></div>
   <div class="grid3"><label class="field"><span>Libellé</span><input class="inp" data-in="qf" data-k="label" value="${esc(QF.label || INTER_TYPES[QF.type])}"></label><label class="field"><span>Date</span><input class="inp" type="date" data-in="qf" data-k="date" value="${QF.date}"></label>
   <div class="field"><span>Statut</span><div class="seg" style="height:42px;align-items:center">${QF.edit ? '<button type="button" class="on">Planifiée</button>' : [['realisee', 'Réalisée'], ['planifiee', 'Planifiée']].map(([v, l]) => `<button type="button" class="${QF.statut === v ? 'on' : ''}" data-a="qfS" data-v="${v}">${l}</button>`).join('')}</div></div></div>
@@ -562,19 +628,20 @@ function renderQF() {
   <div class="note ${warn.length ? 'warn' : ''}">${ic(warn.length ? 'alert' : 'info')}<span>${surf ? `${nf(surf, 2)} ha · coût intrants estimé <b>${eur(cost)}</b> (${eur(surf ? cost / surf : 0)}/ha)` : 'Choisissez au moins une parcelle'}${QF.statut === 'realisee' ? ' · déduction automatique des stocks et du carburant' : ''}${warn.length ? '<br>Stock insuffisant : ' + warn.join(' · ') : ''}</span></div>
   ${!QF.edit ? `<label class="row small"><input type="checkbox" data-ch="qfFavSave" ${QF.saveFav ? 'checked' : ''}> Enregistrer comme favori</label>` : ''}`;
 }
-ACT.qfP = d => { const a = QF.parcelles; const i = a.indexOf(d.id); i >= 0 ? a.splice(i, 1) : a.push(d.id); if (a.length === 1 && !QF.produits.length && !QF.fromPlan) suggestFromItk(); if (a.length !== 1) QF.fromPlan = null; renderQF(); };
-ACT.qfT = d => { QF.type = d.k; if (QF.autoLabel !== false || !QF.label) QF.label = INTER_TYPES[d.k]; QF.fromPlan = null; renderQF(); };
+ACT.qfP = d => { const a = QF.parcelles; const i = a.indexOf(d.id); i >= 0 ? a.splice(i, 1) : a.push(d.id); if (!QF.manual) suggestPlan(QF.planLabel); renderQF(); };
+ACT.qfCult = d => { const ids = d.c === '*' ? S.parcelles.map(p => p.id) : S.parcelles.filter(p => curCult(p)?.culture === d.c).map(p => p.id); const all = ids.every(id => QF.parcelles.includes(id)); if (all) QF.parcelles = QF.parcelles.filter(id => !ids.includes(id)); else ids.forEach(id => { if (!QF.parcelles.includes(id)) QF.parcelles.push(id); }); if (!QF.manual) suggestPlan(); renderQF(); };
+ACT.qfT = d => { QF.type = d.k; QF.typeLocked = true; QF.manual = false; QF.produits = []; suggestPlan(); if (!QF.planLabel && !QF.produits.length) QF.label = INTER_TYPES[d.k]; renderQF(); };
 ACT.qfS = d => { QF.statut = d.v; renderQF(); };
 ACT.qfM = d => { const a = QF.materiels; const i = a.indexOf(d.id); i >= 0 ? a.splice(i, 1) : a.push(d.id); renderQF(); };
-ACT.qfAdd = () => { QF.produits.push({ itemId: '', dose: '' }); renderQF(); };
+ACT.qfAdd = () => { QF.produits.push({ itemId: '', dose: '' }); QF.manual = true; renderQF(); };
 ACT.qfDel = d => { QF.produits.splice(+d.i, 1); renderQF(); };
-ACT.qfFav = d => { applyFav(d.id); QF.fromPlan = null; renderQF(); };
-CH.qfProd = el => { QF.produits[+el.dataset.i].itemId = el.value; renderQF(); };
+ACT.qfFav = d => { applyFav(d.id); QF.manual = true; renderQF(); };
+CH.qfProd = el => { QF.produits[+el.dataset.i].itemId = el.value; QF.manual = true; renderQF(); };
 CH.qfMo = el => { QF.mo = el.value; };
 CH.qfFavSave = el => { QF.saveFav = el.checked; };
 CH.qfPhoto = async el => { for (const f of [...el.files].slice(0, 6)) { QF.photos.push(await downscale(f)); } renderQF(); };
 IN.qf = el => { QF[el.dataset.k] = el.value; if (el.dataset.k === 'label') QF.autoLabel = false; };
-IN.qfDose = el => { QF.produits[+el.dataset.i].dose = el.value; };
+IN.qfDose = el => { QF.produits[+el.dataset.i].dose = el.value; QF.manual = true; };
 IN.qfH = el => { const s = qfSurface(); QF.hHa = s ? (+el.value || 0) / s : 0; };
 function downscale(file, max = 640) { return new Promise(res => { const r = new FileReader(); r.onload = () => { const img = new Image(); img.onload = () => { const k = Math.min(1, max / Math.max(img.width, img.height)); const c = document.createElement('canvas'); c.width = img.width * k; c.height = img.height * k; c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); res(c.toDataURL('image/jpeg', 0.72)); }; img.onerror = () => res(r.result); img.src = r.result; }; r.readAsDataURL(file); }); }
 function submitQF() {
@@ -587,7 +654,7 @@ function submitQF() {
   QF.parcelles.forEach(pid => {
     const p = byId('parcelles', pid);
     const camp = Object.keys(p.cultures).map(Number).filter(c => p.cultures[c].semis <= QF.date || c === campOf(QF.date)).sort((a, b) => b - a)[0] || campOf(QF.date);
-    let iv = QF.fromPlan && QF.parcelles.length === 1 ? byId('interventions', QF.fromPlan) : null;
+    let iv = QF.planLabel ? S.interventions.filter(i => i.parcelleId === pid && i.statut === 'planifiee' && i.label === QF.planLabel && i.type === QF.type).sort((a, b) => Math.abs(daysBetween(a.date, QF.date)) - Math.abs(daysBetween(b.date, QF.date)))[0] || null : null;
     if (iv) Object.assign(iv, { type: QF.type, label: QF.label || INTER_TYPES[QF.type], date: QF.date, produits: prods.map(x => ({ ...x })), materiels: [...QF.materiels], heures: r2(QF.hHa * p.surface, 1), mo: QF.mo, meteo: QF.meteo, obs: QF.obs, photos: QF.photos });
     else { iv = { id: uid('iv'), campagne: camp, parcelleId: pid, date: QF.date, type: QF.type, label: QF.label || INTER_TYPES[QF.type], statut: 'planifiee', surface: p.surface, produits: prods.map(x => ({ ...x })), materiels: [...QF.materiels], heures: r2(QF.hHa * p.surface, 1), mo: QF.mo, meteo: QF.meteo, obs: QF.obs, photos: QF.photos }; S.interventions.push(iv); }
     if (QF.type === 'recolte' && QF.statut === 'realisee') iv.recolteQte = r2(+QF.recolte * p.surface / surfTot, 2);
@@ -595,7 +662,8 @@ function submitQF() {
   });
   if (QF.saveFav) S.favoris.push({ id: uid('f'), label: QF.label || INTER_TYPES[QF.type], type: QF.type, produits: prods, materiels: [...QF.materiels], hHa: r2(QF.hHa, 3) });
   S.interventions.sort((a, b) => a.date.localeCompare(b.date));
-  commit(warns.length ? `Enregistrée avec alertes : ${warns.join(' · ')}` : QF.statut === 'realisee' ? `Intervention enregistrée · ${eur(total)} d'intrants déduits des stocks` : 'Intervention planifiée', warns.length ? 'warn' : '');
+  const n = QF.parcelles.length;
+  commit(warns.length ? `Enregistrée avec alertes : ${warns.join(' · ')}` : QF.statut === 'realisee' ? `${n > 1 ? `Opération enregistrée sur ${n} parcelles` : 'Opération enregistrée'} · ${eur(total)} d'intrants déduits des stocks` : `${n > 1 ? n + ' interventions planifiées' : 'Intervention planifiée'}`, warns.length ? 'warn' : '');
 }
 
 /* =========================== STOCKS =========================== */

@@ -588,3 +588,41 @@ table.t tfoot td{font-weight:750;border-top:2px solid var(--border);border-botto
   .top .btn.icon{width:44px;height:44px}
 }
 @media (max-width:1023px){.toast-box{bottom:auto;top:calc(66px + env(safe-area-inset-top))}.toast{pointer-events:none}}
+
+/* ===== V5 — tâches lisibles, opérations par parcelle ===== */
+.tk{--c:var(--primary);background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:14px;position:relative;overflow:hidden}
+.tk+.tk{margin-top:10px}
+.tk:before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--c)}
+.tk-top{display:flex;gap:12px;align-items:flex-start}
+.tk-ic{width:44px;height:44px;border-radius:13px;display:grid;place-items:center;flex:none;background:color-mix(in srgb,var(--c) 15%,transparent);color:var(--c)}
+.tk-ic svg.i{width:22px;height:22px}
+.tk-main{flex:1;min-width:0}
+.tk-cat{display:block;font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--c)}
+.tk-main b{display:block;font-size:15.5px;line-height:1.25;margin:2px 0 4px}
+.tk-meta{display:block;font-size:13px;color:var(--text-2);line-height:1.35}
+.tk-meta b{font-weight:700}
+.tk-parcs{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.tk-parcs i{font-style:normal;font-size:11.5px;font-weight:650;background:var(--surface-2);border:1px solid var(--border);border-radius:7px;padding:2px 7px;color:var(--text-2)}
+.tk-act{display:flex;gap:8px;margin-top:12px;padding-left:56px}
+.tk-act .btn{flex:1;height:40px}
+.tk-act .tk-go{background:var(--c);border-color:var(--c);color:#fff;flex:2}
+.tk-sum{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.tk-sum button{border:1.5px solid var(--border);background:var(--surface);border-radius:14px;padding:12px 10px;text-align:left;cursor:pointer;color:var(--text)}
+.tk-sum b{display:block;font-size:26px;font-weight:800;line-height:1}
+.tk-sum span{font-size:12px;font-weight:700;color:var(--muted)}
+.tk-sum .late b{color:var(--late)}
+.tk-sum .soon b{color:var(--c-stock)}
+.tk-sum button.on{border-color:var(--text);box-shadow:inset 0 0 0 1px var(--text)}
+.fchip svg.i{width:16px;height:16px}
+.fchip.on svg.i{color:#fff}
+.pcard{--c:var(--primary);background:color-mix(in srgb,var(--c) 10%,var(--surface));border:1px solid color-mix(in srgb,var(--c) 30%,var(--border));border-radius:16px;padding:14px}
+.pcard .sw{width:14px;height:40px;border-radius:6px;background:var(--c);flex:none}
+.pcard b{display:block;font-size:16px}
+.pcard span{font-size:12.5px;color:var(--muted)}
+.op-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.op{display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 4px;border-radius:14px;border:1px solid var(--border);background:var(--surface);font-weight:700;font-size:12px;cursor:pointer;color:var(--text);text-align:center}
+.op .ti{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;background:color-mix(in srgb,var(--c-cult) 14%,transparent);color:var(--c-cult)}
+.op .ti svg.i{width:21px;height:21px}
+.op:active{transform:scale(.97)}
+.act-s{height:30px;padding:0 12px;border-radius:9px;border:0;background:var(--c-cult);color:#fff;font-weight:750;font-size:12.5px;cursor:pointer}
+@media (max-width:420px){.tk-act{padding-left:0}}
