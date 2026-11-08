@@ -22,7 +22,7 @@ function mapLeafletHTML() {
   return `<div class="lmap-wrap"><div id="lmap"></div>
     <div class="lmap-ctl ltop"><div class="seg">${Object.entries(MAP_BASES).map(([k, b]) => `<button class="${base === k ? 'on' : ''}" data-a="mapBase" data-k="${k}">${b.label}</button>`).join('')}</div>
       ${Object.entries(MAP_OVERLAYS).map(([k, o]) => `<button class="lchip ${ov.includes(k) ? 'on' : ''}" data-a="mapOv" data-k="${k}">${o.label}</button>`).join('')}</div>
-    <div class="lmap-ctl rside"><button class="lbtn" data-a="mapSearch" aria-label="Rechercher un lieu">${ic('search')}</button><button class="lbtn" data-a="mapLocate" aria-label="Ma position">${ic('pin')}</button><button class="lbtn" data-a="mapFit" aria-label="Voir toutes les parcelles">${ic('map')}</button></div>
+    <div class="lmap-ctl rside"><button class="lbtn" data-a="mapLocate" aria-label="Ma position">${ic('pin')}</button><button class="lbtn" data-a="mapFit" aria-label="Voir toutes les parcelles">${ic('map')}</button></div>
   </div>`;
 }
 const realParcels = () => landParcels().filter(p => !p.contourProvisoire && p.coords?.length >= 3);
@@ -43,7 +43,8 @@ function initLeaflet() {
     if (!dim) poly.bindTooltip(zonesOf(p).length ? `<b>${esc(p.nom)}</b><br>${zonesOf(p).map(z => `${esc(CULTURES[curCult(z)?.culture]?.nom || '')} ${nf(z.surface, 1)} ha`).join(' · ')}` : `<b>${esc(p.nom)}</b><br>${nf(p.surface, 2)} ha`, { permanent: true, direction: 'center', className: 'ptip' });
     poly.on('click', e => { if (EDIT) return; L.DomEvent.stopPropagation(e); openDrawer('parcelle', p.id); });
   });
-  if (UI.mapView) LMAP.setView(UI.mapView.c, UI.mapView.z);
+  if (UI.pendingView) { LMAP.setView([UI.pendingView[0], UI.pendingView[1]], UI.pendingView[2]); UI.pendingView = null; }
+  else if (UI.mapView) LMAP.setView(UI.mapView.c, UI.mapView.z);
   else if (realParcels().length) LMAP.fitBounds(L.latLngBounds(realParcels().flatMap(p => p.coords)), { padding: [30, 30] });
   else LMAP.setView([46.6, 2.4], 6);
   LMAP.on('moveend', () => { UI.mapView = { c: LMAP.getCenter(), z: LMAP.getZoom() }; });
@@ -142,4 +143,4 @@ IN.geoQ = el => {
     } catch (e) { out.innerHTML = '<div class="empty">Recherche impossible (connexion ?)</div>'; }
   }, 350);
 };
-ACT.geoGo = d => { closeModal(); if (LMAP) LMAP.setView([+d.la, +d.ln], +d.z); };
+ACT.geoGo = d => { closeModal(); const b = document.getElementById('psRes'); if (b) b.hidden = true; if (LMAP) LMAP.setView([+d.la, +d.ln], +d.z); else { UI.tabs.parc = 'carte'; UI.pendingView = [+d.la, +d.ln, +d.z]; render(); } };

@@ -1119,3 +1119,15 @@ details.more summary{cursor:pointer;font-weight:700;font-size:13px;color:var(--p
 .g-21.parc-g{grid-template-columns:minmax(0,1fr) minmax(330px,380px)}
 @media (max-width:1100px){.g-21.parc-g{grid-template-columns:1fr}}
 @media (max-height:700px) and (max-width:759px){.wel-hero{height:24vh;min-height:140px}.wel-h{font-size:22px;margin-bottom:10px}.wel-s{padding:12px}.wel-s .ic{width:34px;height:34px;margin-bottom:2px}}
+/* recherche unique parcellaire */
+.psearch{position:relative;flex:1 1 260px;max-width:440px;min-width:0}
+.psearch>svg{position:absolute;left:13px;top:50%;transform:translateY(-50%);width:18px;height:18px;color:var(--muted);pointer-events:none}
+.psearch .inp{padding-left:40px;padding-right:38px;height:42px;border-radius:14px}
+.ps-x{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:30px;height:30px;border:0;border-radius:50%;background:var(--surface-3);display:grid;place-items:center;cursor:pointer;color:var(--text-2)}.ps-x svg{width:14px;height:14px}
+.ps-res{position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:30;background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:0 16px 36px -12px rgba(0,0,0,.28);padding:6px;max-height:min(60vh,420px);overflow:auto}
+.ps-h{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:8px 10px 4px}
+.ps-i{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:12px;cursor:pointer}.ps-i:hover,.ps-i:active{background:var(--surface-3)}
+.ps-ic{width:32px;height:32px;border-radius:10px;display:grid;place-items:center;flex:none;background:color-mix(in srgb,var(--c) 16%,transparent);color:var(--c)}.ps-ic svg{width:16px;height:16px}
+.ps-i .tx{display:flex;flex-direction:column;min-width:0}.ps-i b{font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ps-i small{font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ps-e{font-size:12.5px;color:var(--muted);padding:6px 10px 10px}
+@media (max-width:900px){.psearch{flex-basis:100%;max-width:none;order:3}}
