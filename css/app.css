@@ -628,3 +628,8 @@ table.t tfoot td{font-weight:750;border-top:2px solid var(--border);border-botto
 @media (max-width:420px){.tk-act{padding-left:0}}
 .month-h{font-size:13px;font-weight:750;color:var(--text-2);margin:16px 4px 8px;text-transform:capitalize}
 .tk-meta b{display:inline;font-size:inherit;margin:0}
+.top-tasks{position:relative;gap:7px;text-decoration:none;color:var(--text);height:44px;padding:0 12px;border-radius:12px;font-weight:700}
+.top-tasks.on{background:var(--primary-soft);color:var(--primary)}
+.top-tasks .dot{position:absolute;top:3px;right:2px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--late);color:#fff;font-size:10.5px;font-weight:800;display:grid;place-items:center;border:2px solid var(--bg)}
+.top-tasks svg.i{width:22px;height:22px;stroke-width:2.2}
+@media (max-width:1023px){.top-tasks{width:46px;padding:0;justify-content:center}}

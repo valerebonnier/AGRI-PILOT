@@ -154,8 +154,8 @@ ACT.taskCat = d => { UI.f.taskCat = d.c; render(); };
 VIEWS.plus = () => {
   const todo = todoList();
   const n = c => todo.filter(t => t.cat === c && t.urgence !== 'ok').length;
-  const cnt = { interventions: n('cultures'), stocks: n('stocks'), materiel: n('materiel'), ventes: n('ventes'), pac: n('admin'), documents: n('documents') };
-  const groups = [['Production', ['parcellaire', 'itk', 'interventions', 'stocks']], ['Économie', ['ventes', 'economie', 'materiel']], ['Administration', ['exploitation', 'pac', 'documents', 'parametres']]];
+  const cnt = { taches: todo.filter(t => t.urgence !== 'ok').length, interventions: n('cultures'), stocks: n('stocks'), materiel: n('materiel'), ventes: n('ventes'), pac: n('admin'), documents: n('documents') };
+  const groups = [['Production', ['taches', 'parcellaire', 'itk', 'interventions']], ['Économie', ['ventes', 'economie', 'materiel']], ['Administration', ['exploitation', 'pac', 'documents', 'parametres']]];
   return `${groups.map(([g, ids]) => `<div class="sec-h"><h3>${g}</h3></div><div class="mod-grid">${ids.map(id => { const r = ROUTES.find(x => x[0] === id); return `<a class="mod" href="#${id}" style="--c:${MOD_COLOR[id]}"><span class="ti">${ic(r[2])}</span>${r[1]}${cnt[id] ? `<span class="cnt">${cnt[id]}</span>` : ''}</a>`; }).join('')}</div>`).join('')}
   <div class="sec-h"><h3>Réglages rapides</h3></div>
   <div class="card"><div class="mrow" style="cursor:default"><div class="ic">${ic('calendar')}</div><div class="tx"><b>Campagne analysée</b><span>Chiffres économiques affichés</span></div><select class="inp" style="width:auto;height:40px" data-ch="camp">${[2025, 2026, 2027].map(c => `<option value="${c}" ${PREFS.camp === c ? 'selected' : ''}>${campLabel(c)}</option>`).join('')}</select></div>

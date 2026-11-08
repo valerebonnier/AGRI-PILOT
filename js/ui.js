@@ -211,7 +211,8 @@ function shell() {
   const cnt = { taches: urgent, interventions: byCat('cultures'), stocks: byCat('stocks'), materiel: byCat('materiel'), ventes: byCat('ventes'), pac: byCat('admin'), documents: byCat('documents') };
   const r = ROUTES.find(x => x[0] === UI.route) || (UI.route === 'plus' ? ['plus', 'Menu'] : ROUTES[0]);
   UI._pa = []; const content = (VIEWS[UI.route] || VIEWS.dashboard)(); const bar = paBar();
-  const isTab = ['dashboard', 'parcellaire', 'taches', 'plus'].includes(UI.route);
+  const isTab = ['dashboard', 'parcellaire', 'stocks', 'taches', 'plus'].includes(UI.route);
+  const stockAlerts = todo.filter(t => t.kind === 'stock').length;
   return `
   <aside class="side">
     <div class="brand"><div class="brand-logo">${ic('leaf')}</div><div><b>AGRI PILOT</b><small>ERP agricole</small></div></div>
@@ -229,7 +230,7 @@ function shell() {
       <div class="sp"></div>
       <select class="inp hide-m" style="width:auto;height:38px" data-ch="camp" title="Campagne analysée">${[2025, 2026, 2027].map(c => `<option value="${c}" ${PREFS.camp === c ? 'selected' : ''}>Campagne ${campLabel(c)}${c === CURRENT_CAMP ? ' (en cours)' : ''}</option>`).join('')}</select>
       <button class="btn icon g" data-a="search" title="Recherche globale (Ctrl+K)">${ic('search')}</button>
-      <div class="rel"><button class="btn icon g icon-btn" data-a="notif" title="Notifications">${ic('bell')}${urgent ? `<span class="dot">${urgent}</span>` : ''}</button>${UI.notif ? notifPop(todo) : ''}</div>
+      <a href="#taches" class="btn g top-tasks ${UI.route === 'taches' ? 'on' : ''}" title="Tâches" aria-label="Tâches${urgent ? ` (${urgent} à traiter)` : ''}">${ic('check')}<span class="hide-m">Tâches</span>${urgent ? `<span class="dot">${urgent}</span>` : ''}</a>
       <button class="btn icon g hide-m" data-a="theme" title="Mode sombre">${ic(PREFS.theme === 'dark' ? 'sun' : 'moon')}</button>
       <button class="btn p hide-m" data-a="actionSheet">${ic('plus')} Saisir</button>
     </header>
@@ -240,7 +241,7 @@ function shell() {
     <a href="#dashboard" class="${UI.route === 'dashboard' ? 'on' : ''}">${ic('home')}Accueil</a>
     <a href="#parcellaire" class="${UI.route === 'parcellaire' ? 'on' : ''}">${ic('map')}Parcelles</a>
     <button class="plus" data-a="actionSheet" aria-label="Saisir">${ic('plus')}</button>
-    <a href="#taches" class="${UI.route === 'taches' ? 'on' : ''}">${ic('check')}Tâches${urgent ? `<span class="bdg">${urgent}</span>` : ''}</a>
+    <a href="#stocks" class="${UI.route === 'stocks' ? 'on' : ''}">${ic('box')}Stocks${stockAlerts ? `<span class="bdg">${stockAlerts}</span>` : ''}</a>
     <a href="#plus" class="${!isTab || UI.route === 'plus' ? 'on' : ''}">${ic('grid')}Plus</a>
   </nav>`;
 }
